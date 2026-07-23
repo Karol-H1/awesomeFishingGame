@@ -41,14 +41,27 @@ const BEACH = 18;   // thickness of the sand band, the inner part of BORDER, nex
 const BOAT_SPEED = 200;
 
 // Canoe texture dimensions and the hitbox carved out of it.
-// The hitbox intentionally covers just the hull, not the paddle
-// (which sticks out past the bow) — the paddle is visual only.
+// The hitbox is trimmed slightly from the sharp bow/stern tips for a
+// hitbox that feels fair rather than exactly tracing the hull outline.
 const CANOE_TEX_W = 76;
 const CANOE_TEX_H = 34;
 const HITBOX_W = 54;
 const HITBOX_H = 18;
 const HITBOX_OFFSET_X = 6;
 const HITBOX_OFFSET_Y = (CANOE_TEX_H - HITBOX_H) / 2;
+
+// Health bar
+const MAX_HEALTH = 100;
+const DAMAGE_PERCENT = 5;      // health lost per rock collision
+const HIT_COOLDOWN_MS = 800;   // brief invulnerability after a hit, so one
+                                // bump against a rock doesn't melt health
+                                // every physics step while still touching it
+const HEALTH_BAR_WIDTH = HITBOX_W; // never exceeds the boat's own length
+const HEALTH_BAR_HEIGHT = 6;
+const HEALTH_BAR_OFFSET_Y = 24; // how far below the boat it floats
+
+// Rock
+const ROCK_RADIUS = 20;
 
 class MainScene extends Phaser.Scene {
   constructor() {
@@ -60,26 +73,36 @@ class MainScene extends Phaser.Scene {
     // procedurally with Phaser Graphics and bake it into textures.
     this.createLakeTexture();
     this.createCanoeTexture();
+    this.createRockTexture();
   }
 
   create() {
     this.add.image(0, 0, 'lakeBackground').setOrigin(0, 0);
 
-    this.boat = this.physics.add.sprite(WIDTH / 2, HEIGHT / 2, 'canoeTexture');
+    // Spawn away from dead-center, since the rock sits in the middle
+    // of the lake and we don't want the boat starting on top of it.
+    this.boat = this.physics.add.sprite(BORDER + 90, HEIGHT - BORDER - 90, 'canoeTexture');
     this.boat.setCollideWorldBounds(true);
+    this.boat.health = MAX_HEALTH;
+    this.boat.lastHitTime = 0;
 
     // Give the boat a hitbox smaller than its full texture, matching
-    // just the hull silhouette (not the paddle overhang). Arcade
-    // Physics bodies are axis-aligned and do NOT rotate with the
-    // sprite — worth knowing once we add obstacles later, since a
-    // long thin hull will "feel" wider when facing diagonally than
-    // the art suggests.
+    // just the hull silhouette. Arcade Physics bodies are axis-aligned
+    // and do NOT rotate with the sprite — worth knowing once we add
+    // more obstacles, since a long thin hull will "feel" wider when
+    // facing diagonally than the art suggests.
     this.boat.body.setSize(HITBOX_W, HITBOX_H);
     this.boat.body.setOffset(HITBOX_OFFSET_X, HITBOX_OFFSET_Y);
 
     // Constrain movement to the water area, not the full canvas,
     // so the boat can never drive onto the land border.
     this.physics.world.setBounds(BORDER, BORDER, WIDTH - BORDER * 2, HEIGHT - BORDER * 2);
+
+    // A rock sitting in the middle of the lake. It's static — it
+    // never moves — but still needs a physics body to collide with.
+    this.rock = this.physics.add.staticImage(WIDTH / 2, HEIGHT / 2, 'rockTexture');
+    this.rock.body.setCircle(ROCK_RADIUS);
+    this.physics.add.collider(this.boat, this.rock, this.hitRock, null, this);
 
     this.keys = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -95,6 +118,17 @@ class MainScene extends Phaser.Scene {
       this.showHitbox = !this.showHitbox;
       if (!this.showHitbox) this.hitboxGraphics.clear();
     });
+
+    // Health bar — redrawn every frame in update() so it can track
+    // the boat's position without being a child of the (rotating) sprite.
+    this.healthBarGraphics = this.add.graphics();
+  }
+
+  hitRock(boat, rock) {
+    const now = boat.scene.time.now;
+    if (now < boat.lastHitTime + HIT_COOLDOWN_MS) return; // still on cooldown
+    boat.lastHitTime = now;
+    boat.health = Math.max(0, boat.health - DAMAGE_PERCENT);
   }
 
   update() {
@@ -121,6 +155,29 @@ class MainScene extends Phaser.Scene {
       this.hitboxGraphics.lineStyle(2, 0xff3333, 1);
       this.hitboxGraphics.strokeRect(b.x, b.y, b.width, b.height);
     }
+
+    this.drawHealthBar();
+  }
+
+  drawHealthBar() {
+    const pct = this.boat.health / MAX_HEALTH;
+    const barX = this.boat.x - HEALTH_BAR_WIDTH / 2;
+    const barY = this.boat.y + HEALTH_BAR_OFFSET_Y;
+
+    this.healthBarGraphics.clear();
+
+    // Background track
+    this.healthBarGraphics.fillStyle(0x2b2b2b, 0.7);
+    this.healthBarGraphics.fillRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
+
+    // Fill — green when healthy, shifting to red as health drops
+    const fillColor = pct > 0.5 ? 0x4caf50 : (pct > 0.25 ? 0xf0ad4e : 0xd9534f);
+    this.healthBarGraphics.fillStyle(fillColor, 1);
+    this.healthBarGraphics.fillRect(barX, barY, HEALTH_BAR_WIDTH * pct, HEALTH_BAR_HEIGHT);
+
+    // Border
+    this.healthBarGraphics.lineStyle(1, 0x111111, 0.9);
+    this.healthBarGraphics.strokeRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
   }
 
   createLakeTexture() {
@@ -200,8 +257,8 @@ class MainScene extends Phaser.Scene {
 
     // Hull — asymmetric on purpose: the bow (right) tapers to a
     // sharper point, the stern (left) is blunter. Combined with the
-    // fisherman facing the bow below, this makes "front" readable
-    // even at a glance.
+    // fisherman facing the bow below (see the nose nub), this makes
+    // "front" readable even at a glance.
     g.fillStyle(0x8b5a2b, 1);
     g.lineStyle(2, 0x5c3a1a, 1);
     g.beginPath();
@@ -220,7 +277,7 @@ class MainScene extends Phaser.Scene {
     g.fillEllipse(w / 2 - 2, h / 2, 46, 14);
 
     // --- Fisherman, seated inside the hull, facing the bow (+x) ---
-    const seatX = 30; // slightly toward the stern, leaving paddle room at the bow
+    const seatX = 30; // slightly toward the stern, so the bow has some open deck
 
     // Torso — kept within the hull's vertical extent (h/2 ± 9)
     g.fillStyle(0xc0392b, 1);
@@ -239,18 +296,40 @@ class MainScene extends Phaser.Scene {
       seatX + 13, h / 2
     );
 
-    // Paddle — held forward, blade dipping into the water just past
-    // the bow. This deliberately extends past the hull silhouette so
-    // "front" is legible even before the boat starts moving.
-    g.lineStyle(2, 0x3d2b1f, 1);
-    g.beginPath();
-    g.moveTo(seatX + 8, h / 2 - 5);
-    g.lineTo(w - 2, h / 2 - 11);
-    g.strokePath();
-    g.fillStyle(0x5c3a1a, 1);
-    g.fillEllipse(w - 2, h / 2 - 12, 8, 4);
-
     g.generateTexture('canoeTexture', w, h);
+    g.destroy();
+  }
+
+  createRockTexture() {
+    const size = ROCK_RADIUS * 2;
+    const cx = ROCK_RADIUS;
+    const cy = ROCK_RADIUS;
+    const g = this.add.graphics();
+
+    // Slightly irregular rock silhouette (a wobbled circle)
+    g.fillStyle(0x8a8a8a, 1);
+    g.lineStyle(2, 0x5f5f5f, 1);
+    g.beginPath();
+    const points = 10;
+    for (let i = 0; i <= points; i++) {
+      const angle = (i / points) * Math.PI * 2;
+      const wobble = 1 + (i % 2 === 0 ? 0.08 : -0.06);
+      const px = cx + Math.cos(angle) * ROCK_RADIUS * wobble;
+      const py = cy + Math.sin(angle) * ROCK_RADIUS * wobble;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+
+    // A couple of darker shading patches for a bit of depth
+    g.fillStyle(0x6f6f6f, 0.6);
+    g.fillEllipse(cx - 5, cy + 4, 14, 9);
+    g.fillStyle(0xa8a8a8, 0.6);
+    g.fillEllipse(cx + 4, cy - 6, 10, 7);
+
+    g.generateTexture('rockTexture', size, size);
     g.destroy();
   }
 }

@@ -17,16 +17,30 @@ the boat contained.
 - Simple, flat, hand-drawn-looking shapes (procedurally drawn, no
   external image assets yet).
 - Palette: blue water, sand beach, green land, brown wooden canoe,
-  small red-shirted fisherman.
+  small red-shirted fisherman, gray rock.
 - Land border, from water outward: **beach** (sand) → **grass** (with
   pine trees near the outer edge).
 - The canoe's front (bow) is always identifiable: the hull is
-  asymmetric (sharper point at the bow), the fisherman sits facing the
-  bow, and the paddle extends forward past the bow into the water.
+  asymmetric (sharper point at the bow), and the fisherman sits facing
+  the bow (with a small nose nub confirming which way he's looking).
+
+## Health
+- Boat starts at 100 health (percentage-based).
+- A health bar floats just below the boat at all times, sized to
+  never exceed the boat's own length. It doesn't rotate with the boat
+  — it stays level, which is the norm for readability in most games.
+- Bar color shifts green → orange → red as health drops.
+
+## Hazards
+- A rock sits in the middle of the lake. Colliding with it costs the
+  boat 5% health, with a brief cooldown per hit so leaning on the rock
+  doesn't drain health every single frame.
+- The boat now spawns off-center (bottom-left area of the lake) rather
+  than exactly at the rock's position.
 
 ## Player hitbox
-- The boat has an explicit hitbox sized to the hull only (not the
-  paddle overhang), ready for future obstacle/collision work.
+- The boat has an explicit hitbox sized to the hull, ready for
+  obstacle/collision work (now in use for the rock).
 - Press **H** in-game to toggle a visual outline of the hitbox for
   debugging.
 - Known limitation: Arcade Physics hitboxes are axis-aligned and don't
@@ -41,8 +55,8 @@ the boat contained.
 - Proper lake-shaped collision (currently a rectangle inset from the
   screen edges, not a natural lake silhouette).
 - Score, objectives, or a win condition.
-- Actual collision response (hitbox exists now, but nothing to collide
-  with yet).
+- More hazards (multiple rocks, moving obstacles), and what happens at
+  0% health (currently nothing — the boat just stops taking damage).
 
 ## Controls
 | Key | Action |

@@ -72,7 +72,33 @@ bundler (e.g. Vite) to serve them.
   hitbox — useful while tuning size/offset or once collectibles/
   obstacles are added.
 
-## Lake background layering
+## Health bar
+- `boat.health` is a plain number property on the sprite (0-100), not
+  a separate class — simplest thing that works at this scale.
+- The bar itself is a `Graphics` object cleared and redrawn every
+  frame in `drawHealthBar()`, positioned from `boat.x`/`boat.y` plus a
+  fixed offset. It's deliberately **not** parented to the boat sprite
+  or rotated with it, so it stays level and readable regardless of
+  which way the boat is facing.
+- Width is capped to `HEALTH_BAR_WIDTH` (currently reuses `HITBOX_W`)
+  so it can never visually exceed the boat's own length, per the
+  design constraint.
+
+## Rock hazard
+- The rock is a **static** Arcade Physics body (`physics.add.staticImage`)
+  — it never moves, so it doesn't need velocity/collision-response
+  math applied to it, only to the boat.
+- Its hitbox is a circle (`body.setCircle`), which is more accurate
+  for a round rock than a rectangle would be, and is one case where a
+  non-rectangular hitbox was worth the small extra setup.
+- `physics.add.collider(boat, rock, hitRock, ...)` gives us two things
+  for free: (1) physical separation — the boat can't drive through the
+  rock, and (2) a callback (`hitRock`) that fires on contact, where we
+  apply damage.
+- Damage has a cooldown (`HIT_COOLDOWN_MS`) because Arcade's collider
+  callback fires every physics step while two bodies overlap — without
+  a cooldown, resting against the rock would drain health continuously
+  rather than reading as a single "bump."
 `createLakeTexture()` builds the shoreline from the outside in:
 grass (with trees near the outer edge) → sand beach ring → water. Each
 layer is just a filled rect drawn after the previous one, sized a bit
