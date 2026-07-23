@@ -16,9 +16,21 @@ the boat contained.
 ## Visual style
 - Simple, flat, hand-drawn-looking shapes (procedurally drawn, no
   external image assets yet).
-- Palette: blue water, green land, brown wooden canoe, small red-shirted
-  fisherman.
-- Land border includes small pine trees for texture/readability.
+- Palette: blue water, sand beach, green land, brown wooden canoe,
+  small red-shirted fisherman.
+- Land border, from water outward: **beach** (sand) → **grass** (with
+  pine trees near the outer edge).
+- The canoe's front (bow) is always identifiable: the hull is
+  asymmetric (sharper point at the bow), the fisherman sits facing the
+  bow, and the paddle extends forward past the bow into the water.
+
+## Player hitbox
+- The boat has an explicit hitbox sized to the hull only (not the
+  paddle overhang), ready for future obstacle/collision work.
+- Press **H** in-game to toggle a visual outline of the hitbox for
+  debugging.
+- Known limitation: Arcade Physics hitboxes are axis-aligned and don't
+  rotate with the sprite. Fine for now; flagged in `ARCHITECTURE.md`.
 
 ## Out of scope for MVP (future ideas)
 - Fishing mechanic (casting, catching fish, a fish population/economy).
@@ -29,6 +41,8 @@ the boat contained.
 - Proper lake-shaped collision (currently a rectangle inset from the
   screen edges, not a natural lake silhouette).
 - Score, objectives, or a win condition.
+- Actual collision response (hitbox exists now, but nothing to collide
+  with yet).
 
 ## Controls
 | Key | Action |

@@ -30,14 +30,25 @@
 </head>
 <body>
 <div id="game-container"></div>
-<div id="hint">WASD to paddle around the lake</div>
+<div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; H to toggle hitbox view</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
 <script>
 const WIDTH = 800;
 const HEIGHT = 600;
-const BORDER = 50; // thickness of the land border around the lake
+const BORDER = 50;  // distance from screen edge to the water — includes grass + beach
+const BEACH = 18;   // thickness of the sand band, the inner part of BORDER, next to the water
 const BOAT_SPEED = 200;
+
+// Canoe texture dimensions and the hitbox carved out of it.
+// The hitbox intentionally covers just the hull, not the paddle
+// (which sticks out past the bow) — the paddle is visual only.
+const CANOE_TEX_W = 76;
+const CANOE_TEX_H = 34;
+const HITBOX_W = 54;
+const HITBOX_H = 18;
+const HITBOX_OFFSET_X = 6;
+const HITBOX_OFFSET_Y = (CANOE_TEX_H - HITBOX_H) / 2;
 
 class MainScene extends Phaser.Scene {
   constructor() {
@@ -57,6 +68,15 @@ class MainScene extends Phaser.Scene {
     this.boat = this.physics.add.sprite(WIDTH / 2, HEIGHT / 2, 'canoeTexture');
     this.boat.setCollideWorldBounds(true);
 
+    // Give the boat a hitbox smaller than its full texture, matching
+    // just the hull silhouette (not the paddle overhang). Arcade
+    // Physics bodies are axis-aligned and do NOT rotate with the
+    // sprite — worth knowing once we add obstacles later, since a
+    // long thin hull will "feel" wider when facing diagonally than
+    // the art suggests.
+    this.boat.body.setSize(HITBOX_W, HITBOX_H);
+    this.boat.body.setOffset(HITBOX_OFFSET_X, HITBOX_OFFSET_Y);
+
     // Constrain movement to the water area, not the full canvas,
     // so the boat can never drive onto the land border.
     this.physics.world.setBounds(BORDER, BORDER, WIDTH - BORDER * 2, HEIGHT - BORDER * 2);
@@ -66,6 +86,14 @@ class MainScene extends Phaser.Scene {
       down: Phaser.Input.Keyboard.KeyCodes.S,
       left: Phaser.Input.Keyboard.KeyCodes.A,
       right: Phaser.Input.Keyboard.KeyCodes.D
+    });
+
+    // Debug view of the boat's hitbox — press H to toggle.
+    this.hitboxGraphics = this.add.graphics();
+    this.showHitbox = false;
+    this.input.keyboard.on('keydown-H', () => {
+      this.showHitbox = !this.showHitbox;
+      if (!this.showHitbox) this.hitboxGraphics.clear();
     });
   }
 
@@ -86,34 +114,60 @@ class MainScene extends Phaser.Scene {
     }
 
     this.boat.setVelocity(vx, vy);
+
+    if (this.showHitbox) {
+      const b = this.boat.body;
+      this.hitboxGraphics.clear();
+      this.hitboxGraphics.lineStyle(2, 0xff3333, 1);
+      this.hitboxGraphics.strokeRect(b.x, b.y, b.width, b.height);
+    }
   }
 
   createLakeTexture() {
     const g = this.add.graphics();
+    // Grass zone is the outer ring, from the screen edge up to where
+    // the sand begins. Sand fills the ring between grass and water.
+    const grassZone = BORDER - BEACH;
 
-    // Land base
+    // Land base (grass)
     g.fillStyle(0x4a7c3c, 1);
     g.fillRect(0, 0, WIDTH, HEIGHT);
 
-    // Subtle land texture patches, only along the border
+    // Subtle grass texture patches, only within the grass ring
     g.fillStyle(0x3f6b32, 1);
     for (let i = 0; i < 60; i++) {
       const x = Phaser.Math.Between(0, WIDTH);
       const y = Phaser.Math.Between(0, HEIGHT);
-      if (x < BORDER || x > WIDTH - BORDER || y < BORDER || y > HEIGHT - BORDER) {
+      if (x < grassZone || x > WIDTH - grassZone || y < grassZone || y > HEIGHT - grassZone) {
         g.fillCircle(x, y, Phaser.Math.Between(3, 9));
       }
     }
 
-    // Little pine trees lining the shore
+    // Little pine trees lining the grass, set back from the beach
     g.fillStyle(0x2d5024, 1);
     for (let x = 15; x < WIDTH; x += 28) {
-      g.fillTriangle(x, BORDER - 8, x - 7, BORDER - 22, x + 7, BORDER - 22);
-      g.fillTriangle(x, HEIGHT - BORDER + 8, x - 7, HEIGHT - BORDER + 22, x + 7, HEIGHT - BORDER + 22);
+      g.fillTriangle(x, grassZone - 10, x - 7, grassZone - 24, x + 7, grassZone - 24);
+      g.fillTriangle(x, HEIGHT - grassZone + 10, x - 7, HEIGHT - grassZone + 24, x + 7, HEIGHT - grassZone + 24);
     }
     for (let y = 15; y < HEIGHT; y += 28) {
-      g.fillTriangle(BORDER - 8, y, BORDER - 22, y - 7, BORDER - 22, y + 7);
-      g.fillTriangle(WIDTH - BORDER + 8, y, WIDTH - BORDER + 22, y - 7, WIDTH - BORDER + 22, y + 7);
+      g.fillTriangle(grassZone - 10, y, grassZone - 24, y - 7, grassZone - 24, y + 7);
+      g.fillTriangle(WIDTH - grassZone + 10, y, WIDTH - grassZone + 24, y - 7, WIDTH - grassZone + 24, y + 7);
+    }
+
+    // Sand beach ring, between the grass and the water
+    g.fillStyle(0xe0c284, 1);
+    g.fillRect(grassZone, grassZone, WIDTH - grassZone * 2, HEIGHT - grassZone * 2);
+
+    // A few darker sand speckles / pebbles for texture, confined to the beach ring
+    g.fillStyle(0xc9a86a, 0.8);
+    for (let i = 0; i < 90; i++) {
+      const x = Phaser.Math.Between(grassZone, WIDTH - grassZone);
+      const y = Phaser.Math.Between(grassZone, HEIGHT - grassZone);
+      const inOuter = x >= grassZone && x <= WIDTH - grassZone && y >= grassZone && y <= HEIGHT - grassZone;
+      const inInner = x >= BORDER && x <= WIDTH - BORDER && y >= BORDER && y <= HEIGHT - BORDER;
+      if (inOuter && !inInner) {
+        g.fillCircle(x, y, Phaser.Math.Between(1, 3));
+      }
     }
 
     // Water
@@ -136,49 +190,65 @@ class MainScene extends Phaser.Scene {
   }
 
   createCanoeTexture() {
-    const w = 64;
-    const h = 34;
+    // Convention: at rotation 0, the sprite faces along +x (screen
+    // right). So the bow (front) is drawn on the right side of the
+    // texture, the stern (back) on the left. This must stay in sync
+    // with how boat.rotation is set from velocity in update().
+    const w = CANOE_TEX_W;
+    const h = CANOE_TEX_H;
     const g = this.add.graphics();
 
-    // Hull, pointed at both ends
+    // Hull — asymmetric on purpose: the bow (right) tapers to a
+    // sharper point, the stern (left) is blunter. Combined with the
+    // fisherman facing the bow below, this makes "front" readable
+    // even at a glance.
     g.fillStyle(0x8b5a2b, 1);
     g.lineStyle(2, 0x5c3a1a, 1);
     g.beginPath();
-    g.moveTo(2, h / 2);
-    g.lineTo(14, h / 2 - 8);
-    g.lineTo(w - 14, h / 2 - 8);
-    g.lineTo(w - 2, h / 2);
-    g.lineTo(w - 14, h / 2 + 8);
-    g.lineTo(14, h / 2 + 8);
+    g.moveTo(6, h / 2);            // stern tip (blunter curve into it)
+    g.lineTo(16, h / 2 - 9);
+    g.lineTo(50, h / 2 - 9);
+    g.lineTo(64, h / 2);           // bow tip (sharper — closer, tighter taper)
+    g.lineTo(50, h / 2 + 9);
+    g.lineTo(16, h / 2 + 9);
     g.closePath();
     g.fillPath();
     g.strokePath();
 
-    // Darker interior
+    // Darker interior "box" the fisherman sits inside
     g.fillStyle(0x6b4423, 1);
-    g.fillEllipse(w / 2, h / 2, w * 0.55, h * 0.4);
+    g.fillEllipse(w / 2 - 2, h / 2, 46, 14);
 
-    // Fisherman torso
+    // --- Fisherman, seated inside the hull, facing the bow (+x) ---
+    const seatX = 30; // slightly toward the stern, leaving paddle room at the bow
+
+    // Torso — kept within the hull's vertical extent (h/2 ± 9)
     g.fillStyle(0xc0392b, 1);
-    g.fillRoundedRect(w / 2 - 6, h / 2 - 10, 12, 12, 3);
+    g.fillRoundedRect(seatX - 6, h / 2 - 6, 12, 12, 3);
 
-    // Fisherman head
+    // Head, offset toward the bow from the torso to read as "facing forward"
     g.fillStyle(0xe0ac69, 1);
-    g.fillCircle(w / 2, h / 2 - 12, 5);
+    g.fillCircle(seatX + 7, h / 2, 4.5);
 
-    // Fishing rod
+    // Small nose/brim nub on the forward edge of the head — an
+    // unambiguous "this is the front of the face" marker
+    g.fillStyle(0xcf9a5c, 1);
+    g.fillTriangle(
+      seatX + 10, h / 2 - 2,
+      seatX + 10, h / 2 + 2,
+      seatX + 13, h / 2
+    );
+
+    // Paddle — held forward, blade dipping into the water just past
+    // the bow. This deliberately extends past the hull silhouette so
+    // "front" is legible even before the boat starts moving.
     g.lineStyle(2, 0x3d2b1f, 1);
     g.beginPath();
-    g.moveTo(w / 2 + 4, h / 2 - 8);
-    g.lineTo(w / 2 + 22, h / 2 - 20);
+    g.moveTo(seatX + 8, h / 2 - 5);
+    g.lineTo(w - 2, h / 2 - 11);
     g.strokePath();
-
-    // Fishing line
-    g.lineStyle(1, 0xdddddd, 0.8);
-    g.beginPath();
-    g.moveTo(w / 2 + 22, h / 2 - 20);
-    g.lineTo(w / 2 + 20, h / 2 + 2);
-    g.strokePath();
+    g.fillStyle(0x5c3a1a, 1);
+    g.fillEllipse(w - 2, h / 2 - 12, 8, 4);
 
     g.generateTexture('canoeTexture', w, h);
     g.destroy();

@@ -8,6 +8,14 @@
 - [x] Canoe rotates to face movement direction
 - [x] Boat is confined to the water area (can't enter land)
 
+## Done (v2)
+- [x] Fisherman redrawn seated inside the hull silhouette
+- [x] Clear front/back on the canoe: asymmetric hull, fisherman facing
+      the bow, paddle extending forward
+- [x] Sand beach band added between water and grass
+- [x] Explicit hitbox on the boat, sized to the hull (not the paddle),
+      with an H-key debug toggle to view it
+
 ## Next up (pick based on what you want most)
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle
@@ -15,7 +23,10 @@
 - [ ] Add ambient sound (water, birds) and a paddle sound
 - [ ] Make the lake shape irregular/natural instead of a rectangle
 - [ ] Add fishing mechanic (cast line, wait, catch fish)
-- [ ] Add obstacles (rocks, lily pads, other boats)
+- [ ] Add obstacles (rocks, lily pads, other boats) and wire up actual
+      collision now that the boat has a hitbox
+- [ ] Revisit hitbox approach (AABB vs. rotated/circular) once
+      obstacles exist and diagonal facing starts to matter
 - [ ] Add a simple UI/HUD (e.g. fish caught counter)
 - [ ] Split single-file HTML into `/src` modules once complexity grows
 
