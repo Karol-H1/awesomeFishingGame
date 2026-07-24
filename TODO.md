@@ -36,14 +36,21 @@
 - [x] H-key debug view now draws the actual rotated hitbox polygon
 - [x] Fixed velocity units for Matter (per-step, not per-second)
 
+## Done (v6)
+- [x] Hook mechanic: click to cast toward the cursor, auto-returns to
+      the boat's current position; one hook active at a time; no range
+      limit yet
+
 ## Next up (pick based on what you want most)
+- [ ] Limit hook range relative to the boat
+- [ ] Add fish to catch with the hook (spawning, population, catch logic)
+- [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle
 - [ ] Add paddle-splash particle effect when moving
 - [ ] Add ambient sound (water, birds) and a paddle sound, plus a
       "thud" sound/flash when hitting the rock
 - [ ] Make the lake shape irregular/natural instead of a rectangle
-- [ ] Add fishing mechanic (cast line, wait, catch fish)
 - [ ] Add more hazards/obstacles (more rocks, lily pads, other boats) —
       now easier to make accurate since hitboxes can be rotated rectangles
 - [ ] Decide what happens at 0% health beyond restart (score? best time?)

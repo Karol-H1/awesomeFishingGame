@@ -55,8 +55,22 @@ the boat contained.
 - Press **H** in-game to toggle a visual outline of the hitbox; you
   can watch it rotate with the boat in real time.
 
+## Hook
+- Click anywhere to cast the hook from the boat toward the clicked
+  point. It travels out, then automatically returns to the boat's
+  current position (which may have moved while the hook was out).
+- Only one hook can be active at a time — clicking while it's out or
+  returning does nothing.
+- No range limit yet — the hook can be cast anywhere on screen. A
+  proximity limit (relative to the boat) is planned but not built.
+- Purpose (not yet implemented): collecting fish and damaging other
+  players' boats. For now it's just the cast/return mechanic with no
+  effect on anything it passes over.
+
 ## Out of scope for MVP (future ideas)
-- Fishing mechanic (casting, catching fish, a fish population/economy).
+- Hook range limit, tied to boat proximity.
+- Fish to catch with the hook (spawning, population, catching logic).
+- Other players'/boats to damage with the hook (multiplayer or AI).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
 - Sound effects (paddle splash, ambient lake sounds) and music.
@@ -76,6 +90,7 @@ the boat contained.
 | A   | Move left |
 | S   | Move down |
 | D   | Move right |
+| Click | Cast the hook toward the clicked point |
 | H   | Toggle hitbox debug view |
 | R   | Restart the game |
 

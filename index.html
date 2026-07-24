@@ -30,7 +30,7 @@
 </head>
 <body>
 <div id="game-container"></div>
-<div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; H to toggle hitbox view &nbsp;|&nbsp; R to restart</div>
+<div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; Click to cast the hook &nbsp;|&nbsp; H to toggle hitbox view &nbsp;|&nbsp; R to restart</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
 <script>
@@ -63,6 +63,10 @@ const HEALTH_BAR_OFFSET_Y = 24; // how far below the boat it floats
 // Rock
 const ROCK_RADIUS = 20;
 
+// Hook
+const HOOK_SPEED = 500;      // px/sec, both casting out and returning
+const HOOK_ARRIVE_DIST = 4;  // snap-to-target threshold, avoids jitter on the last frame
+
 class MainScene extends Phaser.Scene {
   constructor() {
     super('MainScene');
@@ -75,6 +79,7 @@ class MainScene extends Phaser.Scene {
     this.createCanoeTexture();
     this.createRockTexture();
     this.createSunkTexture();
+    this.createHookTexture();
   }
 
   create() {
@@ -139,6 +144,26 @@ class MainScene extends Phaser.Scene {
     // the boat's position without being a child of the (rotating) sprite.
     this.healthBarGraphics = this.add.graphics();
 
+    // Hook — a plain (non-physics) sprite we move by hand each frame,
+    // plus a graphics object for the rope line connecting it to the
+    // boat. 'idle' means docked/hidden; a click sends it 'out' toward
+    // the target, and once it arrives it flips to 'returning' and
+    // chases the boat's current position (which may have moved) back.
+    this.hook = this.add.image(this.boat.x, this.boat.y, 'hookTexture');
+    this.hook.setVisible(false);
+    this.hookState = 'idle';
+    this.hookTarget = { x: 0, y: 0 };
+    this.hookGraphics = this.add.graphics();
+
+    this.input.on('pointerdown', (pointer) => {
+      if (this.gameOver || this.hookState !== 'idle') return;
+      this.hookTarget.x = pointer.worldX;
+      this.hookTarget.y = pointer.worldY;
+      this.hook.setPosition(this.boat.x, this.boat.y);
+      this.hook.setVisible(true);
+      this.hookState = 'out';
+    });
+
     // Game over state, restart key, and message
     this.gameOver = false;
     this.input.keyboard.on('keydown-R', () => {
@@ -170,10 +195,13 @@ class MainScene extends Phaser.Scene {
     this.boat.setStatic(true); // freeze it in place; controls are disabled anyway
     this.healthBarGraphics.clear();
     this.hitboxGraphics.clear();
+    this.hookGraphics.clear();
+    this.hook.setVisible(false);
+    this.hookState = 'idle';
     this.gameOverText.setVisible(true);
   }
 
-  update() {
+  update(time, delta) {
     if (this.gameOver) return; // controls disabled once the boat has sunk; press R to restart
 
     let vx = 0;
@@ -215,6 +243,37 @@ class MainScene extends Phaser.Scene {
     }
 
     this.drawHealthBar();
+    this.updateHook(delta);
+  }
+
+  updateHook(delta) {
+    if (this.hookState === 'idle') return;
+
+    const dt = delta / 1000;
+    const step = HOOK_SPEED * dt;
+    const target = this.hookState === 'out' ? this.hookTarget : this.boat;
+    const dx = target.x - this.hook.x;
+    const dy = target.y - this.hook.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist <= Math.max(step, HOOK_ARRIVE_DIST)) {
+      if (this.hookState === 'out') {
+        this.hook.setPosition(this.hookTarget.x, this.hookTarget.y);
+        this.hookState = 'returning';
+      } else {
+        this.hookState = 'idle';
+        this.hook.setVisible(false);
+      }
+    } else {
+      this.hook.x += (dx / dist) * step;
+      this.hook.y += (dy / dist) * step;
+    }
+
+    this.hookGraphics.clear();
+    if (this.hookState !== 'idle') {
+      this.hookGraphics.lineStyle(2, 0x3a2a1a, 0.8);
+      this.hookGraphics.lineBetween(this.boat.x, this.boat.y, this.hook.x, this.hook.y);
+    }
   }
 
   drawHealthBar() {
@@ -387,6 +446,22 @@ class MainScene extends Phaser.Scene {
     );
 
     g.generateTexture('sunkTexture', w, h);
+    g.destroy();
+  }
+
+  createHookTexture() {
+    const size = 14;
+    const g = this.add.graphics();
+
+    // Shaft plus a curled tip — a simple metal J-hook silhouette.
+    g.lineStyle(2, 0x999999, 1);
+    g.beginPath();
+    g.moveTo(size / 2, 0);
+    g.lineTo(size / 2, size - 6);
+    g.arc(size / 2 - 3, size - 6, 3, 0, Math.PI * 1.4, false);
+    g.strokePath();
+
+    g.generateTexture('hookTexture', size, size);
     g.destroy();
   }
 
