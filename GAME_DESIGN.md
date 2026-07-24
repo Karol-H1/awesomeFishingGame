@@ -31,6 +31,15 @@ the boat contained.
   — it stays level, which is the norm for readability in most games.
 - Bar color shifts green → orange → red as health drops.
 
+## Sinking / game over
+- At 0 health, the boat "sinks": its texture swaps so the hull
+  disappears, leaving just the fisherman floating in a couple of
+  ripples. Controls are disabled at this point.
+- A "Your boat sank! Press R to restart" message appears.
+- Pressing **R** restarts the scene from scratch (fresh health,
+  position, and rock state). This works at any time, not just after
+  sinking, as a manual reset.
+
 ## Hazards
 - A rock sits in the middle of the lake. Colliding with it costs the
   boat 5% health, with a brief cooldown per hit so leaning on the rock
@@ -39,12 +48,12 @@ the boat contained.
   than exactly at the rock's position.
 
 ## Player hitbox
-- The boat has an explicit hitbox sized to the hull, ready for
-  obstacle/collision work (now in use for the rock).
-- Press **H** in-game to toggle a visual outline of the hitbox for
-  debugging.
-- Known limitation: Arcade Physics hitboxes are axis-aligned and don't
-  rotate with the sprite. Fine for now; flagged in `ARCHITECTURE.md`.
+- The boat has a rectangular hitbox sized to the hull, running on
+  **Matter Physics** — so it's a true rotated rectangle that turns
+  together with the boat, not the flat axis-aligned box we had under
+  the original Arcade Physics setup.
+- Press **H** in-game to toggle a visual outline of the hitbox; you
+  can watch it rotate with the boat in real time.
 
 ## Out of scope for MVP (future ideas)
 - Fishing mechanic (casting, catching fish, a fish population/economy).
@@ -54,9 +63,11 @@ the boat contained.
 - Camera/zoom, or a larger world with scrolling instead of a single screen.
 - Proper lake-shaped collision (currently a rectangle inset from the
   screen edges, not a natural lake silhouette).
-- Score, objectives, or a win condition.
-- More hazards (multiple rocks, moving obstacles), and what happens at
-  0% health (currently nothing — the boat just stops taking damage).
+- Score, objectives, or a proper win condition.
+- More hazards (multiple rocks, moving obstacles).
+- Anything beyond "sink and restart" at 0% health (e.g. a death
+  animation, a delay before the restart prompt appears, a score/best-
+  time tracker).
 
 ## Controls
 | Key | Action |
@@ -65,9 +76,12 @@ the boat contained.
 | A   | Move left |
 | S   | Move down |
 | D   | Move right |
+| H   | Toggle hitbox debug view |
+| R   | Restart the game |
 
 Diagonal movement (e.g. W+D) is supported and normalized so diagonal
-speed matches straight-line speed.
+speed matches straight-line speed. Controls are disabled once the
+boat has sunk (health hits 0) until the player restarts.
 
 ## Screen / world size
 - Canvas: 800x600

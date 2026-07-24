@@ -30,7 +30,7 @@
 </head>
 <body>
 <div id="game-container"></div>
-<div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; H to toggle hitbox view</div>
+<div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; H to toggle hitbox view &nbsp;|&nbsp; R to restart</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
 <script>
@@ -43,12 +43,12 @@ const BOAT_SPEED = 200;
 // Canoe texture dimensions and the hitbox carved out of it.
 // The hitbox is trimmed slightly from the sharp bow/stern tips for a
 // hitbox that feels fair rather than exactly tracing the hull outline.
+// With Matter physics, this rectangle is centered on the sprite and
+// rotates together with it — no manual offset math needed.
 const CANOE_TEX_W = 76;
 const CANOE_TEX_H = 34;
 const HITBOX_W = 54;
 const HITBOX_H = 18;
-const HITBOX_OFFSET_X = 6;
-const HITBOX_OFFSET_Y = (CANOE_TEX_H - HITBOX_H) / 2;
 
 // Health bar
 const MAX_HEALTH = 100;
@@ -74,6 +74,7 @@ class MainScene extends Phaser.Scene {
     this.createLakeTexture();
     this.createCanoeTexture();
     this.createRockTexture();
+    this.createSunkTexture();
   }
 
   create() {
@@ -81,28 +82,43 @@ class MainScene extends Phaser.Scene {
 
     // Spawn away from dead-center, since the rock sits in the middle
     // of the lake and we don't want the boat starting on top of it.
-    this.boat = this.physics.add.sprite(BORDER + 90, HEIGHT - BORDER - 90, 'canoeTexture');
-    this.boat.setCollideWorldBounds(true);
+    this.boat = this.matter.add.sprite(BORDER + 90, HEIGHT - BORDER - 90, 'canoeTexture');
     this.boat.health = MAX_HEALTH;
     this.boat.lastHitTime = 0;
 
-    // Give the boat a hitbox smaller than its full texture, matching
-    // just the hull silhouette. Arcade Physics bodies are axis-aligned
-    // and do NOT rotate with the sprite — worth knowing once we add
-    // more obstacles, since a long thin hull will "feel" wider when
-    // facing diagonally than the art suggests.
-    this.boat.body.setSize(HITBOX_W, HITBOX_H);
-    this.boat.body.setOffset(HITBOX_OFFSET_X, HITBOX_OFFSET_Y);
+    // Give the boat a rectangular hitbox matching just the hull
+    // silhouette. Unlike Arcade Physics, Matter bodies rotate together
+    // with the sprite, so the hitbox now genuinely tracks the boat's
+    // facing direction instead of staying a flat axis-aligned box.
+    this.boat.setRectangle(HITBOX_W, HITBOX_H);
+    // We drive rotation ourselves from the velocity vector each frame
+    // (see update()), so lock out Matter's own collision-driven
+    // spin — otherwise bumping the rock at an angle could leave the
+    // boat spinning until the next key press overwrites it.
+    this.boat.setFixedRotation();
 
-    // Constrain movement to the water area, not the full canvas,
-    // so the boat can never drive onto the land border.
-    this.physics.world.setBounds(BORDER, BORDER, WIDTH - BORDER * 2, HEIGHT - BORDER * 2);
+    // Constrain movement to the water area, not the full canvas, so
+    // the boat can never drive onto the land border. Matter models
+    // this as real static wall bodies around the given rectangle.
+    this.matter.world.setBounds(BORDER, BORDER, WIDTH - BORDER * 2, HEIGHT - BORDER * 2);
 
-    // A rock sitting in the middle of the lake. It's static — it
-    // never moves — but still needs a physics body to collide with.
-    this.rock = this.physics.add.staticImage(WIDTH / 2, HEIGHT / 2, 'rockTexture');
-    this.rock.body.setCircle(ROCK_RADIUS);
-    this.physics.add.collider(this.boat, this.rock, this.hitRock, null, this);
+    // A rock sitting in the middle of the lake. Static — it never
+    // moves — but still needs a physics body to collide with. A
+    // circular body suits a round rock better than a rectangle would.
+    this.rock = this.matter.add.image(WIDTH / 2, HEIGHT / 2, 'rockTexture');
+    this.rock.setCircle(ROCK_RADIUS);
+    this.rock.setStatic(true);
+
+    // Matter fires 'collisionstart' once per new contact (not every
+    // frame of overlap like Arcade's collider), so this is a natural
+    // fit for "you just hit the rock" rather than continuous damage.
+    this.matter.world.on('collisionstart', (event) => {
+      for (const pair of event.pairs) {
+        const involvesBoat = pair.bodyA === this.boat.body || pair.bodyB === this.boat.body;
+        const involvesRock = pair.bodyA === this.rock.body || pair.bodyB === this.rock.body;
+        if (involvesBoat && involvesRock) this.hitRock();
+      }
+    });
 
     this.keys = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -122,16 +138,44 @@ class MainScene extends Phaser.Scene {
     // Health bar — redrawn every frame in update() so it can track
     // the boat's position without being a child of the (rotating) sprite.
     this.healthBarGraphics = this.add.graphics();
+
+    // Game over state, restart key, and message
+    this.gameOver = false;
+    this.input.keyboard.on('keydown-R', () => {
+      this.scene.restart();
+    });
+    this.gameOverText = this.add.text(WIDTH / 2, HEIGHT / 2, 'Your boat sank!\nPress R to restart', {
+      fontFamily: 'sans-serif',
+      fontSize: '28px',
+      color: '#ffffff',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 4
+    }).setOrigin(0.5).setVisible(false);
   }
 
-  hitRock(boat, rock) {
-    const now = boat.scene.time.now;
-    if (now < boat.lastHitTime + HIT_COOLDOWN_MS) return; // still on cooldown
-    boat.lastHitTime = now;
-    boat.health = Math.max(0, boat.health - DAMAGE_PERCENT);
+  hitRock() {
+    if (this.gameOver) return;
+    const now = this.time.now;
+    if (now < this.boat.lastHitTime + HIT_COOLDOWN_MS) return; // still on cooldown
+    this.boat.lastHitTime = now;
+    this.boat.health = Math.max(0, this.boat.health - DAMAGE_PERCENT);
+    if (this.boat.health <= 0) this.sinkBoat();
+  }
+
+  sinkBoat() {
+    this.gameOver = true;
+    this.boat.setTexture('sunkTexture'); // hull disappears, fisherman remains — the boat sank
+    this.boat.setVelocity(0, 0);
+    this.boat.setStatic(true); // freeze it in place; controls are disabled anyway
+    this.healthBarGraphics.clear();
+    this.hitboxGraphics.clear();
+    this.gameOverText.setVisible(true);
   }
 
   update() {
+    if (this.gameOver) return; // controls disabled once the boat has sunk; press R to restart
+
     let vx = 0;
     let vy = 0;
 
@@ -147,13 +191,27 @@ class MainScene extends Phaser.Scene {
       this.boat.rotation = Math.atan2(vy, vx);
     }
 
-    this.boat.setVelocity(vx, vy);
+    // Matter velocity is expressed per simulation step (effectively
+    // per 1/60th of a second at the default rate), not per second like
+    // Arcade's. Dividing by 60 keeps the on-screen speed matching what
+    // BOAT_SPEED describes; without this the boat would rocket across
+    // the screen almost instantly.
+    this.boat.setVelocity(vx / 60, vy / 60);
 
     if (this.showHitbox) {
-      const b = this.boat.body;
+      // Draw the body's actual vertices — Matter keeps these updated
+      // in world space as the body rotates, so this polygon visibly
+      // turns together with the boat instead of staying axis-aligned.
+      const verts = this.boat.body.vertices;
       this.hitboxGraphics.clear();
       this.hitboxGraphics.lineStyle(2, 0xff3333, 1);
-      this.hitboxGraphics.strokeRect(b.x, b.y, b.width, b.height);
+      this.hitboxGraphics.beginPath();
+      this.hitboxGraphics.moveTo(verts[0].x, verts[0].y);
+      for (let i = 1; i < verts.length; i++) {
+        this.hitboxGraphics.lineTo(verts[i].x, verts[i].y);
+      }
+      this.hitboxGraphics.closePath();
+      this.hitboxGraphics.strokePath();
     }
 
     this.drawHealthBar();
@@ -300,6 +358,38 @@ class MainScene extends Phaser.Scene {
     g.destroy();
   }
 
+  createSunkTexture() {
+    // Same canvas size and same seatX/fisherman coordinates as
+    // createCanoeTexture(), so swapping textures on the sprite doesn't
+    // cause any visual jump — only the hull disappears.
+    const w = CANOE_TEX_W;
+    const h = CANOE_TEX_H;
+    const seatX = 30;
+    const g = this.add.graphics();
+
+    // Ripples where the boat used to be
+    g.lineStyle(2, 0x5b9be0, 0.6);
+    g.strokeCircle(seatX, h / 2, 13);
+    g.strokeCircle(seatX, h / 2, 21);
+
+    // The fisherman, floating without his boat
+    g.fillStyle(0xc0392b, 1);
+    g.fillRoundedRect(seatX - 6, h / 2 - 6, 12, 12, 3);
+
+    g.fillStyle(0xe0ac69, 1);
+    g.fillCircle(seatX + 7, h / 2, 4.5);
+
+    g.fillStyle(0xcf9a5c, 1);
+    g.fillTriangle(
+      seatX + 10, h / 2 - 2,
+      seatX + 10, h / 2 + 2,
+      seatX + 13, h / 2
+    );
+
+    g.generateTexture('sunkTexture', w, h);
+    g.destroy();
+  }
+
   createRockTexture() {
     const size = ROCK_RADIUS * 2;
     const cx = ROCK_RADIUS;
@@ -341,8 +431,8 @@ const config = {
   parent: 'game-container',
   backgroundColor: '#3a7bd5',
   physics: {
-    default: 'arcade',
-    arcade: {
+    default: 'matter',
+    matter: {
       gravity: { x: 0, y: 0 },
       debug: false
     }

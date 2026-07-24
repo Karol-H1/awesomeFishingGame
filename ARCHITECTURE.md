@@ -2,7 +2,11 @@
 
 ## Stack
 - **Phaser 3** (loaded via CDN, currently v3.70.0) — handles the game
-  loop, rendering, input, and Arcade Physics.
+  loop, rendering, input, and physics.
+- **Matter Physics** (Phaser's Matter.js integration) — handles the
+  boat's and rock's collision bodies. We migrated to this from
+  Phaser's other physics system, Arcade Physics, specifically to get
+  rotated rectangular hitboxes (see "Boat hitbox" below).
 - **Vanilla JavaScript** — no build step required. Everything currently
   lives in a single `index.html` for simplicity while the project is
   small.
@@ -42,12 +46,12 @@ bundler (e.g. Vite) to serve them.
   looking intentional. Swapping these for hand-drawn art later just
   means loading images in `preload()` instead — the rest of the code
   doesn't change.
-- **`create()`** places the background image, spawns the boat as an
-  Arcade Physics sprite, and — importantly — sets the **physics world
+- **`create()`** places the background image, spawns the boat as a
+  Matter Physics sprite, and — importantly — sets the **physics world
   bounds** to be inset from the canvas edges by the land-border
-  thickness. This is what stops the boat from ever driving onto land:
-  `setCollideWorldBounds(true)` on the boat plus the inset world
-  bounds does the work, no manual clamping code needed.
+  thickness. Matter models this as static invisible walls around that
+  inset rectangle, which is what stops the boat from ever driving onto
+  land — no manual clamping code needed.
 - **`update()`** reads WASD state every frame, computes a normalized
   velocity vector (so diagonal movement isn't faster than
   straight-line movement), applies it, and rotates the boat to face
@@ -55,22 +59,26 @@ bundler (e.g. Vite) to serve them.
   when that view is toggled on.
 
 ## Boat hitbox
-- `boat.body` (an Arcade Physics body) is resized and offset with
-  `setSize()`/`setOffset()` to match just the hull, not the paddle
-  overhang that extends past the bow. Constants for this live at the
-  top of the file (`HITBOX_W`, `HITBOX_H`, `HITBOX_OFFSET_*`) next to
-  the texture size they're derived from, so they're easy to keep in
-  sync if the art changes.
-- **Important limitation:** Arcade Physics bodies are always
-  axis-aligned (AABB) — they do not rotate with the sprite. Right now
-  this doesn't matter (nothing to collide with yet), but once
-  obstacles are added, a diagonally-facing boat will have a hitbox
-  wider than its art suggests. Options if that becomes a problem:
-  switch to Matter.js physics (supports rotated bodies) or approximate
-  with a smaller circular hitbox instead of a rectangle.
+- `boat.setRectangle(HITBOX_W, HITBOX_H)` gives the boat a rectangular
+  **Matter** body sized to the hull (constants at the top of the file,
+  next to the texture size they're derived from, so they're easy to
+  keep in sync if the art changes). Because Matter tracks body angle
+  natively, this rectangle rotates together with the sprite — solving
+  the limitation we had under Arcade Physics, where hitboxes were
+  always axis-aligned regardless of how the sprite was rotated.
+- `boat.setFixedRotation()` stops Matter's own physics (e.g. a
+  glancing bump off the rock) from spinning the body on its own. We
+  still fully control rotation ourselves each frame in `update()`
+  (`boat.rotation = Math.atan2(vy, vx)`) — fixed rotation only blocks
+  *physics-driven* spin, not our manual assignment.
 - Press **H** at runtime to toggle a red outline showing the current
-  hitbox — useful while tuning size/offset or once collectibles/
-  obstacles are added.
+  hitbox. It's drawn from `boat.body.vertices`, which Matter keeps
+  updated in world space as the body rotates — so the outline visibly
+  turns with the boat, which is the whole point of this migration.
+- One trade-off worth knowing: Matter velocity is expressed **per
+  simulation step**, not per second like Arcade's. We divide our
+  desired `BOAT_SPEED` (in px/sec) by 60 before calling
+  `setVelocity()` to compensate — see the comment in `update()`.
 
 ## Health bar
 - `boat.health` is a plain number property on the sprite (0-100), not
@@ -84,21 +92,41 @@ bundler (e.g. Vite) to serve them.
   so it can never visually exceed the boat's own length, per the
   design constraint.
 
+## Sinking / game over / restart
+- `sinkBoat()` swaps the boat's texture to `sunkTexture` (fisherman +
+  ripples, no hull) via `setTexture()`. This is why `createSunkTexture()`
+  reuses the exact same canvas size and `seatX`/fisherman coordinates
+  as `createCanoeTexture()` — same anchor, so the swap doesn't cause a
+  visual jump. It's the cheapest way to fake "part of the sprite
+  disappearing" without needing separate layered sprites.
+- `this.gameOver` is a simple flag checked at the top of `update()`
+  (early return) to disable movement/rotation once true. The
+  hitbox-view and health-bar graphics are also cleared once at sink
+  time rather than kept redrawing an irrelevant state.
+- Restart uses Phaser's built-in `this.scene.restart()`, which reruns
+  the full scene lifecycle (`preload` → `create`) as if starting fresh.
+  This is why sinking doesn't need any manual "reset all the state"
+  code — a restart just throws away the old scene and builds a new
+  one from scratch.
+
 ## Rock hazard
-- The rock is a **static** Arcade Physics body (`physics.add.staticImage`)
-  — it never moves, so it doesn't need velocity/collision-response
-  math applied to it, only to the boat.
-- Its hitbox is a circle (`body.setCircle`), which is more accurate
-  for a round rock than a rectangle would be, and is one case where a
-  non-rectangular hitbox was worth the small extra setup.
-- `physics.add.collider(boat, rock, hitRock, ...)` gives us two things
-  for free: (1) physical separation — the boat can't drive through the
-  rock, and (2) a callback (`hitRock`) that fires on contact, where we
-  apply damage.
-- Damage has a cooldown (`HIT_COOLDOWN_MS`) because Arcade's collider
-  callback fires every physics step while two bodies overlap — without
-  a cooldown, resting against the rock would drain health continuously
-  rather than reading as a single "bump."
+- The rock is a **static** Matter body (`matter.add.image(...)` +
+  `setCircle()` + `setStatic(true)`) — it never moves, so it needs no
+  velocity or rotation handling, only a body to collide with.
+- Its hitbox is a circle (`setCircle(ROCK_RADIUS)`), a good, cheap fit
+  for a round rock — no need for a rotated body here since it never
+  turns.
+- We listen for `this.matter.world.on('collisionstart', ...)` and,
+  inside the pair list, check whether the boat's and rock's bodies are
+  both involved. `collisionstart` fires once when contact begins (not
+  every physics step of overlap, unlike Arcade's `collider` callback),
+  so it's naturally a good fit for "you just hit the rock" rather than
+  continuous damage.
+- Damage still has a cooldown (`HIT_COOLDOWN_MS`) as a safety net, in
+  case the boat jitters against the rock and re-triggers
+  `collisionstart` in quick succession.
+
+## Lake background layering
 `createLakeTexture()` builds the shoreline from the outside in:
 grass (with trees near the outer edge) → sand beach ring → water. Each
 layer is just a filled rect drawn after the previous one, sized a bit
