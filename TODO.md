@@ -63,7 +63,7 @@
 ## Done (v9)
 - [x] Halved hook range (250px -> 125px) — deliberately short so
       "increase hook range" has room to be a real upgrade later
-- [x] Slowed boat speed (200 -> 140) and hook cast/return speed
+- [x] Slowed boat speed (200 -> 140 -> 100) and hook cast/return speed
       (500 -> 300px/sec), both deliberately modest for the same reason
 
 ## Next up (pick based on what you want most)
