@@ -60,8 +60,13 @@
       beyond it clamped to the edge instead of ignored
 - [x] Faint circle around the boat shows the current hook range
 
+## Done (v9)
+- [x] Halved hook range (250px -> 125px) — deliberately short so
+      "increase hook range" has room to be a real upgrade later
+
 ## Next up (pick based on what you want most)
 - [ ] Upgrade shop: actual upgrades purchasable with caught fish
+      (hook range increase planned as the first one)
 - [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle

@@ -97,6 +97,8 @@ the boat contained.
 ## Out of scope for MVP (future ideas)
 - Upgrade shop: actual upgrades purchasable with caught fish, and the
   buying interaction itself (the box is reserved, nothing is wired up).
+  Increasing hook range is the first planned upgrade — the range is
+  intentionally short right now (125px) so there's room to grow.
 - Other players'/boats to damage with the hook (multiplayer or AI).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
