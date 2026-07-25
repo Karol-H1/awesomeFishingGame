@@ -67,6 +67,20 @@ const ROCK_RADIUS = 20;
 const HOOK_SPEED = 500;      // px/sec, both casting out and returning
 const HOOK_ARRIVE_DIST = 4;  // snap-to-target threshold, avoids jitter on the last frame
 
+// Fish
+const LAKE_W = WIDTH - BORDER * 2;
+const LAKE_H = HEIGHT - BORDER * 2;
+const FISH_MAX = 10;
+const FISH_SPAWN_INTERVAL_MS = 2500; // how often we try to top the pool back up to FISH_MAX
+const FISH_CIRCLE_RADIUS = LAKE_W / 32; // "swim in circles about 1/32 the size of the lake"
+const FISH_ANGULAR_SPEED = Math.PI / 2; // radians/sec around their own circle
+const FISH_CATCH_RADIUS = 16; // hook-to-fish distance that counts as a catch
+const FISH_TEX_W = 20;
+const FISH_TEX_H = 10;
+const FISH_SUBMERGED_TINT = 0x27425c;
+const FISH_SUBMERGED_ALPHA = 0.55; // dark, translucent — reads as a shadow under the surface
+const FISH_CAUGHT_TINT = 0xe8a33d;
+
 class MainScene extends Phaser.Scene {
   constructor() {
     super('MainScene');
@@ -80,6 +94,7 @@ class MainScene extends Phaser.Scene {
     this.createRockTexture();
     this.createSunkTexture();
     this.createHookTexture();
+    this.createFishTexture();
   }
 
   create() {
@@ -164,6 +179,33 @@ class MainScene extends Phaser.Scene {
       this.hookState = 'out';
     });
 
+    // Fish — each swims a fixed circle around its own spawn point,
+    // drawn as a dark translucent silhouette to read as "under the
+    // water". Capped at FISH_MAX concurrently; a repeating timer tops
+    // the pool back up as fish get caught and delivered.
+    this.fish = [];
+    this.hookedFish = null;
+    for (let i = 0; i < FISH_MAX; i++) this.spawnFish();
+    this.time.addEvent({
+      delay: FISH_SPAWN_INTERVAL_MS,
+      loop: true,
+      callback: () => { if (!this.gameOver) this.spawnFish(); }
+    });
+
+    // Fish-caught counter, boxed in the top-left corner of the land border.
+    this.fishCount = 0;
+    const hudX = 10, hudY = 10, hudW = 100, hudH = 32;
+    this.add.graphics()
+      .fillStyle(0x1a1a1a, 0.55)
+      .fillRoundedRect(hudX, hudY, hudW, hudH, 6)
+      .lineStyle(1, 0xffffff, 0.4)
+      .strokeRoundedRect(hudX, hudY, hudW, hudH, 6);
+    this.fishHudText = this.add.text(hudX + hudW / 2, hudY + hudH / 2, 'Fish: 0', {
+      fontFamily: 'sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    }).setOrigin(0.5);
+
     // Game over state, restart key, and message
     this.gameOver = false;
     this.input.keyboard.on('keydown-R', () => {
@@ -198,6 +240,11 @@ class MainScene extends Phaser.Scene {
     this.hookGraphics.clear();
     this.hook.setVisible(false);
     this.hookState = 'idle';
+    if (this.hookedFish) {
+      this.hookedFish.destroy();
+      this.fish = this.fish.filter((f) => f !== this.hookedFish);
+      this.hookedFish = null;
+    }
     this.gameOverText.setVisible(true);
   }
 
@@ -243,7 +290,21 @@ class MainScene extends Phaser.Scene {
     }
 
     this.drawHealthBar();
+    this.updateFish(delta);
     this.updateHook(delta);
+  }
+
+  updateFish(delta) {
+    const dt = delta / 1000;
+    for (const fish of this.fish) {
+      if (fish.fishState !== 'swimming') continue; // caught fish ride the hook instead, see updateHook()
+      fish.orbitAngle += fish.orbitDir * FISH_ANGULAR_SPEED * dt;
+      fish.x = fish.orbitCenterX + Math.cos(fish.orbitAngle) * FISH_CIRCLE_RADIUS;
+      fish.y = fish.orbitCenterY + Math.sin(fish.orbitAngle) * FISH_CIRCLE_RADIUS;
+      // Tangent direction of travel around the circle, so the fish
+      // faces the way it's swimming rather than the way it's facing outward.
+      fish.rotation = fish.orbitAngle + fish.orbitDir * (Math.PI / 2);
+    }
   }
 
   updateHook(delta) {
@@ -251,6 +312,21 @@ class MainScene extends Phaser.Scene {
 
     const dt = delta / 1000;
     const step = HOOK_SPEED * dt;
+
+    // Only look for a catch on the way out, and only until we've already
+    // snagged one fish — one hook, one fish per cast.
+    if (this.hookState === 'out' && !this.hookedFish) {
+      for (const fish of this.fish) {
+        if (fish.fishState !== 'swimming') continue;
+        const fdx = fish.x - this.hook.x;
+        const fdy = fish.y - this.hook.y;
+        if (fdx * fdx + fdy * fdy <= FISH_CATCH_RADIUS * FISH_CATCH_RADIUS) {
+          this.catchFish(fish);
+          break;
+        }
+      }
+    }
+
     const target = this.hookState === 'out' ? this.hookTarget : this.boat;
     const dx = target.x - this.hook.x;
     const dy = target.y - this.hook.y;
@@ -263,17 +339,57 @@ class MainScene extends Phaser.Scene {
       } else {
         this.hookState = 'idle';
         this.hook.setVisible(false);
+        if (this.hookedFish) this.deliverFish();
       }
     } else {
       this.hook.x += (dx / dist) * step;
       this.hook.y += (dy / dist) * step;
     }
 
+    if (this.hookedFish) this.hookedFish.setPosition(this.hook.x, this.hook.y);
+
     this.hookGraphics.clear();
     if (this.hookState !== 'idle') {
       this.hookGraphics.lineStyle(2, 0x3a2a1a, 0.8);
       this.hookGraphics.lineBetween(this.boat.x, this.boat.y, this.hook.x, this.hook.y);
     }
+  }
+
+  catchFish(fish) {
+    // Catching short-circuits the outward cast — no need to keep
+    // travelling to the original click point once a fish is on the hook.
+    fish.fishState = 'caught';
+    fish.setTint(FISH_CAUGHT_TINT);
+    fish.setAlpha(1);
+    this.hookedFish = fish;
+    this.hookState = 'returning';
+  }
+
+  deliverFish() {
+    this.hookedFish.destroy();
+    this.fish = this.fish.filter((f) => f !== this.hookedFish);
+    this.hookedFish = null;
+    this.fishCount++;
+    this.fishHudText.setText('Fish: ' + this.fishCount);
+  }
+
+  spawnFish() {
+    if (this.fish.length >= FISH_MAX) return;
+
+    const margin = FISH_CIRCLE_RADIUS + FISH_TEX_W / 2 + 4;
+    const centerX = Phaser.Math.Between(BORDER + margin, WIDTH - BORDER - margin);
+    const centerY = Phaser.Math.Between(BORDER + margin, HEIGHT - BORDER - margin);
+
+    const fish = this.add.image(centerX + FISH_CIRCLE_RADIUS, centerY, 'fishTexture');
+    fish.orbitCenterX = centerX;
+    fish.orbitCenterY = centerY;
+    fish.orbitAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    fish.orbitDir = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
+    fish.fishState = 'swimming';
+    fish.setTint(FISH_SUBMERGED_TINT);
+    fish.setAlpha(FISH_SUBMERGED_ALPHA);
+
+    this.fish.push(fish);
   }
 
   drawHealthBar() {
@@ -446,6 +562,26 @@ class MainScene extends Phaser.Scene {
     );
 
     g.generateTexture('sunkTexture', w, h);
+    g.destroy();
+  }
+
+  createFishTexture() {
+    // Drawn in plain white/gray so setTint() gives predictable results:
+    // a dark tint reads as a submerged shadow, a warm tint reads as a
+    // fish that's just been pulled above the surface. Faces +x, same
+    // convention as the canoe texture.
+    const w = FISH_TEX_W;
+    const h = FISH_TEX_H;
+    const g = this.add.graphics();
+
+    g.fillStyle(0xffffff, 1);
+    g.fillEllipse(w * 0.42, h / 2, w * 0.72, h);
+    g.fillTriangle(w * 0.7, h / 2, w, h * 0.12, w, h * 0.88);
+
+    g.fillStyle(0xdddddd, 1);
+    g.fillCircle(w * 0.2, h / 2, 1.6);
+
+    g.generateTexture('fishTexture', w, h);
     g.destroy();
   }
 

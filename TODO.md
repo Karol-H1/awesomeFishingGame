@@ -41,9 +41,18 @@
       the boat's current position; one hook active at a time; no range
       limit yet
 
+## Done (v7)
+- [x] Fish: up to 10 swimming at once, each circling a fixed point at
+      a radius ~1/32 the lake's width, drawn as translucent underwater
+      silhouettes
+- [x] Catching: hook passing near a swimming fish snags it, turns it
+      opaque, and immediately heads back to the boat with it
+- [x] Fish population tops back up over time (capped at 10) as fish
+      are caught and delivered
+- [x] Fish-count HUD box in the top-left corner
+
 ## Next up (pick based on what you want most)
 - [ ] Limit hook range relative to the boat
-- [ ] Add fish to catch with the hook (spawning, population, catch logic)
 - [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle

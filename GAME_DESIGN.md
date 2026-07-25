@@ -63,13 +63,32 @@ the boat contained.
   returning does nothing.
 - No range limit yet — the hook can be cast anywhere on screen. A
   proximity limit (relative to the boat) is planned but not built.
-- Purpose (not yet implemented): collecting fish and damaging other
-  players' boats. For now it's just the cast/return mechanic with no
-  effect on anything it passes over.
+- Catches fish (see below). Damaging other players' boats is not yet
+  implemented.
+
+## Fish
+- Up to 10 fish swim in the lake at a time. Each fish is anchored to
+  a fixed spawn point and continuously circles it, at a radius about
+  1/32 the width of the lake.
+- Fish are drawn as dark, translucent silhouettes so they read as
+  shapes moving under the water's surface, not surface objects.
+- Catching: while the hook is travelling out toward a click, if it
+  passes within a small radius of a swimming fish, that fish is
+  caught — it stops circling, turns fully opaque and warm-colored
+  ("comes above water"), and the hook immediately turns around,
+  carrying the fish back to the boat. Only one fish can be hooked per
+  cast.
+- Once delivered to the boat, the fish is removed and the player's
+  fish count (see HUD below) goes up by one. A repeating timer spawns
+  a replacement fish (respecting the 10-fish cap) so the lake's
+  population recovers over time.
+
+## HUD
+- A small box in the top-left corner of the land border shows
+  "Fish: N" — the running count of fish the player has caught.
 
 ## Out of scope for MVP (future ideas)
 - Hook range limit, tied to boat proximity.
-- Fish to catch with the hook (spawning, population, catching logic).
 - Other players'/boats to damage with the hook (multiplayer or AI).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
