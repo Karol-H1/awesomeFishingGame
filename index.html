@@ -39,7 +39,7 @@ const HEIGHT = 600;
 const BORDER = 50;      // left/right/bottom distance from screen edge to the water
 const TOP_BORDER = 100; // taller than the other sides — reserved for the HUD (fish count + upgrade shop)
 const BEACH = 18;       // thickness of the sand band, the inner part of the border, next to the water
-const BOAT_SPEED = 200;
+const BOAT_SPEED = 140; // deliberately modest — "increase boat speed" is a planned upgrade
 
 // Water rect derived from the (asymmetric) border, reused for physics
 // bounds, spawn positions, and the lake texture.
@@ -72,7 +72,7 @@ const HEALTH_BAR_OFFSET_Y = 24; // how far below the boat it floats
 const ROCK_RADIUS = 20;
 
 // Hook
-const HOOK_SPEED = 500;      // px/sec, both casting out and returning
+const HOOK_SPEED = 300;      // px/sec, both casting out and returning — "increase hook speed" is a planned upgrade
 const HOOK_ARRIVE_DIST = 4;  // snap-to-target threshold, avoids jitter on the last frame
 const HOOK_RANGE = 125;      // max cast distance from the boat; clicks beyond this clamp to the edge
 const HOOK_RANGE_COLOR = 0xffffff;

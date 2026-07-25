@@ -63,10 +63,12 @@
 ## Done (v9)
 - [x] Halved hook range (250px -> 125px) — deliberately short so
       "increase hook range" has room to be a real upgrade later
+- [x] Slowed boat speed (200 -> 140) and hook cast/return speed
+      (500 -> 300px/sec), both deliberately modest for the same reason
 
 ## Next up (pick based on what you want most)
 - [ ] Upgrade shop: actual upgrades purchasable with caught fish
-      (hook range increase planned as the first one)
+      (hook range, boat speed, and hook speed all planned as upgrades)
 - [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle

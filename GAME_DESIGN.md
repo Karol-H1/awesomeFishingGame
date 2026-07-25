@@ -9,6 +9,8 @@ the boat contained.
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.
 - Movement is free in any direction (not grid-based), at a constant speed.
+  Deliberately kept modest for now — "increase boat speed" is a
+  planned upgrade.
 - The canoe rotates to visually face the direction it's moving.
 - The lake is the playable area; a land border around the screen edge
   is solid and cannot be entered.
@@ -59,6 +61,8 @@ the boat contained.
 - Click anywhere to cast the hook from the boat toward the clicked
   point. It travels out, then automatically returns to the boat's
   current position (which may have moved while the hook was out).
+  Cast/return speed is deliberately modest — "increase hook speed" is
+  a planned upgrade.
 - Only one hook can be active at a time — clicking while it's out or
   returning does nothing.
 - Range-limited: a cast can't reach further than a fixed distance from
@@ -97,8 +101,8 @@ the boat contained.
 ## Out of scope for MVP (future ideas)
 - Upgrade shop: actual upgrades purchasable with caught fish, and the
   buying interaction itself (the box is reserved, nothing is wired up).
-  Increasing hook range is the first planned upgrade — the range is
-  intentionally short right now (125px) so there's room to grow.
+  Planned upgrades: hook range, boat speed, and hook cast/return speed
+  — all deliberately kept modest right now so each has room to grow.
 - Other players'/boats to damage with the hook (multiplayer or AI).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
