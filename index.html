@@ -39,7 +39,7 @@ const HEIGHT = 600;
 const BORDER = 50;      // left/right/bottom distance from screen edge to the water
 const TOP_BORDER = 100; // taller than the other sides — reserved for the HUD (fish count + upgrade shop)
 const BEACH = 18;       // thickness of the sand band, the inner part of the border, next to the water
-const BOAT_SPEED = 100; // deliberately modest — "increase boat speed" is a planned upgrade
+const BOAT_SPEED = 75; // deliberately modest — "increase boat speed" is a planned upgrade
 
 // Water rect derived from the (asymmetric) border, reused for physics
 // bounds, spawn positions, and the lake texture.
@@ -373,6 +373,20 @@ class MainScene extends Phaser.Scene {
           this.catchFish(fish);
           break;
         }
+      }
+    }
+
+    // The cast target is clamped to HOOK_RANGE from the boat at the
+    // moment of casting, but the boat keeps moving while the hook is
+    // out — if it moves away from the target, the hook can end up
+    // further than HOOK_RANGE from the boat's *current* position, past
+    // the edge of the range circle. Recheck every frame and turn the
+    // hook back the instant that happens, rather than only at cast time.
+    if (this.hookState === 'out') {
+      const rdx = this.hook.x - this.boat.x;
+      const rdy = this.hook.y - this.boat.y;
+      if (rdx * rdx + rdy * rdy >= HOOK_RANGE * HOOK_RANGE) {
+        this.hookState = 'returning';
       }
     }
 

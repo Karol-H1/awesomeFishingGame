@@ -69,6 +69,11 @@ the boat contained.
   the boat. Clicking beyond that distance casts to the edge of the
   range in the direction clicked, rather than being ignored. A faint
   circle around the boat shows the current range, and moves with it.
+- The range is enforced continuously, not just at cast time: if the
+  boat moves away while the hook is out (e.g. casting toward where
+  the boat just came from), the hook turns back the instant it hits
+  the edge of the range circle, rather than being able to trail
+  outside it.
 - Catches fish (see below). Damaging other players' boats is not yet
   implemented.
 

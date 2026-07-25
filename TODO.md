@@ -63,8 +63,12 @@
 ## Done (v9)
 - [x] Halved hook range (250px -> 125px) — deliberately short so
       "increase hook range" has room to be a real upgrade later
-- [x] Slowed boat speed (200 -> 140 -> 100) and hook cast/return speed
-      (500 -> 300px/sec), both deliberately modest for the same reason
+- [x] Slowed boat speed (200 -> 140 -> 100 -> 75) and hook cast/return
+      speed (500 -> 300px/sec), both deliberately modest for the same reason
+- [x] Fixed bug: casting toward where the boat came from let the hook
+      trail outside the range circle as the boat moved away, since the
+      range was only checked once at cast time. Now checked every
+      frame — the hook turns back the instant it hits the range edge.
 
 ## Next up (pick based on what you want most)
 - [ ] Upgrade shop: actual upgrades purchasable with caught fish
