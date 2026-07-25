@@ -36,9 +36,17 @@
 <script>
 const WIDTH = 800;
 const HEIGHT = 600;
-const BORDER = 50;  // distance from screen edge to the water — includes grass + beach
-const BEACH = 18;   // thickness of the sand band, the inner part of BORDER, next to the water
+const BORDER = 50;      // left/right/bottom distance from screen edge to the water
+const TOP_BORDER = 100; // taller than the other sides — reserved for the HUD (fish count + upgrade shop)
+const BEACH = 18;       // thickness of the sand band, the inner part of the border, next to the water
 const BOAT_SPEED = 200;
+
+// Water rect derived from the (asymmetric) border, reused for physics
+// bounds, spawn positions, and the lake texture.
+const WATER_LEFT = BORDER;
+const WATER_RIGHT = WIDTH - BORDER;
+const WATER_TOP = TOP_BORDER;
+const WATER_BOTTOM = HEIGHT - BORDER;
 
 // Canoe texture dimensions and the hitbox carved out of it.
 // The hitbox is trimmed slightly from the sharp bow/stern tips for a
@@ -66,10 +74,13 @@ const ROCK_RADIUS = 20;
 // Hook
 const HOOK_SPEED = 500;      // px/sec, both casting out and returning
 const HOOK_ARRIVE_DIST = 4;  // snap-to-target threshold, avoids jitter on the last frame
+const HOOK_RANGE = 250;      // max cast distance from the boat; clicks beyond this clamp to the edge
+const HOOK_RANGE_COLOR = 0xffffff;
+const HOOK_RANGE_ALPHA = 0.2;
 
 // Fish
-const LAKE_W = WIDTH - BORDER * 2;
-const LAKE_H = HEIGHT - BORDER * 2;
+const LAKE_W = WATER_RIGHT - WATER_LEFT;
+const LAKE_H = WATER_BOTTOM - WATER_TOP;
 const FISH_MAX = 10;
 const FISH_SPAWN_INTERVAL_MS = 2500; // how often we try to top the pool back up to FISH_MAX
 const FISH_CIRCLE_RADIUS = LAKE_W / 32; // "swim in circles about 1/32 the size of the lake"
@@ -120,12 +131,12 @@ class MainScene extends Phaser.Scene {
     // Constrain movement to the water area, not the full canvas, so
     // the boat can never drive onto the land border. Matter models
     // this as real static wall bodies around the given rectangle.
-    this.matter.world.setBounds(BORDER, BORDER, WIDTH - BORDER * 2, HEIGHT - BORDER * 2);
+    this.matter.world.setBounds(WATER_LEFT, WATER_TOP, LAKE_W, LAKE_H);
 
     // A rock sitting in the middle of the lake. Static — it never
     // moves — but still needs a physics body to collide with. A
     // circular body suits a round rock better than a rectangle would.
-    this.rock = this.matter.add.image(WIDTH / 2, HEIGHT / 2, 'rockTexture');
+    this.rock = this.matter.add.image(WIDTH / 2, (WATER_TOP + WATER_BOTTOM) / 2, 'rockTexture');
     this.rock.setCircle(ROCK_RADIUS);
     this.rock.setStatic(true);
 
@@ -170,10 +181,25 @@ class MainScene extends Phaser.Scene {
     this.hookTarget = { x: 0, y: 0 };
     this.hookGraphics = this.add.graphics();
 
+    // Faint circle around the boat marking max cast distance — redrawn
+    // each frame in update() since it has to track the boat's position.
+    this.hookRangeGraphics = this.add.graphics();
+
     this.input.on('pointerdown', (pointer) => {
       if (this.gameOver || this.hookState !== 'idle') return;
-      this.hookTarget.x = pointer.worldX;
-      this.hookTarget.y = pointer.worldY;
+      const dx = pointer.worldX - this.boat.x;
+      const dy = pointer.worldY - this.boat.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > HOOK_RANGE) {
+        // Beyond range — clamp the cast to the edge of the range circle
+        // in the direction clicked, rather than ignoring the click.
+        const scale = HOOK_RANGE / dist;
+        this.hookTarget.x = this.boat.x + dx * scale;
+        this.hookTarget.y = this.boat.y + dy * scale;
+      } else {
+        this.hookTarget.x = pointer.worldX;
+        this.hookTarget.y = pointer.worldY;
+      }
       this.hook.setPosition(this.boat.x, this.boat.y);
       this.hook.setVisible(true);
       this.hookState = 'out';
@@ -201,6 +227,21 @@ class MainScene extends Phaser.Scene {
       .lineStyle(1, 0xffffff, 0.4)
       .strokeRoundedRect(hudX, hudY, hudW, hudH, 6);
     this.fishHudText = this.add.text(hudX + hudW / 2, hudY + hudH / 2, 'Fish: 0', {
+      fontFamily: 'sans-serif',
+      fontSize: '15px',
+      color: '#ffffff'
+    }).setOrigin(0.5);
+
+    // Shop — reserved space only for now. No upgrades yet; this just
+    // claims the box so future upgrade buttons/icons have somewhere to go.
+    const shopW = 260, shopH = 54;
+    const shopX = WIDTH - 10 - shopW, shopY = 10;
+    this.add.graphics()
+      .fillStyle(0x1a1a1a, 0.55)
+      .fillRoundedRect(shopX, shopY, shopW, shopH, 6)
+      .lineStyle(1, 0xffffff, 0.4)
+      .strokeRoundedRect(shopX, shopY, shopW, shopH, 6);
+    this.add.text(shopX + shopW / 2, shopY + shopH / 2, 'Shop', {
       fontFamily: 'sans-serif',
       fontSize: '15px',
       color: '#ffffff'
@@ -238,6 +279,7 @@ class MainScene extends Phaser.Scene {
     this.healthBarGraphics.clear();
     this.hitboxGraphics.clear();
     this.hookGraphics.clear();
+    this.hookRangeGraphics.clear();
     this.hook.setVisible(false);
     this.hookState = 'idle';
     if (this.hookedFish) {
@@ -290,8 +332,15 @@ class MainScene extends Phaser.Scene {
     }
 
     this.drawHealthBar();
+    this.drawHookRange();
     this.updateFish(delta);
     this.updateHook(delta);
+  }
+
+  drawHookRange() {
+    this.hookRangeGraphics.clear();
+    this.hookRangeGraphics.lineStyle(1, HOOK_RANGE_COLOR, HOOK_RANGE_ALPHA);
+    this.hookRangeGraphics.strokeCircle(this.boat.x, this.boat.y, HOOK_RANGE);
   }
 
   updateFish(delta) {
@@ -377,8 +426,8 @@ class MainScene extends Phaser.Scene {
     if (this.fish.length >= FISH_MAX) return;
 
     const margin = FISH_CIRCLE_RADIUS + FISH_TEX_W / 2 + 4;
-    const centerX = Phaser.Math.Between(BORDER + margin, WIDTH - BORDER - margin);
-    const centerY = Phaser.Math.Between(BORDER + margin, HEIGHT - BORDER - margin);
+    const centerX = Phaser.Math.Between(WATER_LEFT + margin, WATER_RIGHT - margin);
+    const centerY = Phaser.Math.Between(WATER_TOP + margin, WATER_BOTTOM - margin);
 
     const fish = this.add.image(centerX + FISH_CIRCLE_RADIUS, centerY, 'fishTexture');
     fish.orbitCenterX = centerX;
@@ -417,7 +466,10 @@ class MainScene extends Phaser.Scene {
     const g = this.add.graphics();
     // Grass zone is the outer ring, from the screen edge up to where
     // the sand begins. Sand fills the ring between grass and water.
-    const grassZone = BORDER - BEACH;
+    // The top is a taller ring than the other three sides, reserved
+    // for the HUD (see the fish counter / shop boxes in create()).
+    const grassSide = BORDER - BEACH;
+    const grassTop = TOP_BORDER - BEACH;
 
     // Land base (grass)
     g.fillStyle(0x4a7c3c, 1);
@@ -428,7 +480,7 @@ class MainScene extends Phaser.Scene {
     for (let i = 0; i < 60; i++) {
       const x = Phaser.Math.Between(0, WIDTH);
       const y = Phaser.Math.Between(0, HEIGHT);
-      if (x < grassZone || x > WIDTH - grassZone || y < grassZone || y > HEIGHT - grassZone) {
+      if (x < grassSide || x > WIDTH - grassSide || y < grassTop || y > HEIGHT - grassSide) {
         g.fillCircle(x, y, Phaser.Math.Between(3, 9));
       }
     }
@@ -436,25 +488,25 @@ class MainScene extends Phaser.Scene {
     // Little pine trees lining the grass, set back from the beach
     g.fillStyle(0x2d5024, 1);
     for (let x = 15; x < WIDTH; x += 28) {
-      g.fillTriangle(x, grassZone - 10, x - 7, grassZone - 24, x + 7, grassZone - 24);
-      g.fillTriangle(x, HEIGHT - grassZone + 10, x - 7, HEIGHT - grassZone + 24, x + 7, HEIGHT - grassZone + 24);
+      g.fillTriangle(x, grassTop - 10, x - 7, grassTop - 24, x + 7, grassTop - 24);
+      g.fillTriangle(x, HEIGHT - grassSide + 10, x - 7, HEIGHT - grassSide + 24, x + 7, HEIGHT - grassSide + 24);
     }
     for (let y = 15; y < HEIGHT; y += 28) {
-      g.fillTriangle(grassZone - 10, y, grassZone - 24, y - 7, grassZone - 24, y + 7);
-      g.fillTriangle(WIDTH - grassZone + 10, y, WIDTH - grassZone + 24, y - 7, WIDTH - grassZone + 24, y + 7);
+      g.fillTriangle(grassSide - 10, y, grassSide - 24, y - 7, grassSide - 24, y + 7);
+      g.fillTriangle(WIDTH - grassSide + 10, y, WIDTH - grassSide + 24, y - 7, WIDTH - grassSide + 24, y + 7);
     }
 
     // Sand beach ring, between the grass and the water
     g.fillStyle(0xe0c284, 1);
-    g.fillRect(grassZone, grassZone, WIDTH - grassZone * 2, HEIGHT - grassZone * 2);
+    g.fillRect(grassSide, grassTop, WIDTH - grassSide * 2, HEIGHT - grassTop - grassSide);
 
     // A few darker sand speckles / pebbles for texture, confined to the beach ring
     g.fillStyle(0xc9a86a, 0.8);
     for (let i = 0; i < 90; i++) {
-      const x = Phaser.Math.Between(grassZone, WIDTH - grassZone);
-      const y = Phaser.Math.Between(grassZone, HEIGHT - grassZone);
-      const inOuter = x >= grassZone && x <= WIDTH - grassZone && y >= grassZone && y <= HEIGHT - grassZone;
-      const inInner = x >= BORDER && x <= WIDTH - BORDER && y >= BORDER && y <= HEIGHT - BORDER;
+      const x = Phaser.Math.Between(grassSide, WIDTH - grassSide);
+      const y = Phaser.Math.Between(grassTop, HEIGHT - grassSide);
+      const inOuter = x >= grassSide && x <= WIDTH - grassSide && y >= grassTop && y <= HEIGHT - grassSide;
+      const inInner = x >= WATER_LEFT && x <= WATER_RIGHT && y >= WATER_TOP && y <= WATER_BOTTOM;
       if (inOuter && !inInner) {
         g.fillCircle(x, y, Phaser.Math.Between(1, 3));
       }
@@ -462,14 +514,14 @@ class MainScene extends Phaser.Scene {
 
     // Water
     g.fillStyle(0x3a7bd5, 1);
-    g.fillRect(BORDER, BORDER, WIDTH - BORDER * 2, HEIGHT - BORDER * 2);
+    g.fillRect(WATER_LEFT, WATER_TOP, LAKE_W, LAKE_H);
 
     // Gentle ripple lines on the water
     g.lineStyle(2, 0x5b9be0, 0.5);
-    for (let y = BORDER + 20; y < HEIGHT - BORDER; y += 26) {
+    for (let y = WATER_TOP + 20; y < WATER_BOTTOM; y += 26) {
       g.beginPath();
-      g.moveTo(BORDER + 10, y);
-      for (let x = BORDER + 10; x < WIDTH - BORDER; x += 16) {
+      g.moveTo(WATER_LEFT + 10, y);
+      for (let x = WATER_LEFT + 10; x < WATER_RIGHT; x += 16) {
         g.lineTo(x, y + Math.sin(x * 0.05) * 4);
       }
       g.strokePath();
@@ -575,11 +627,11 @@ class MainScene extends Phaser.Scene {
     const g = this.add.graphics();
 
     g.fillStyle(0xffffff, 1);
-    g.fillEllipse(w * 0.42, h / 2, w * 0.72, h);
-    g.fillTriangle(w * 0.7, h / 2, w, h * 0.12, w, h * 0.88);
+    g.fillEllipse(w * 0.58, h / 2, w * 0.72, h);
+    g.fillTriangle(w * 0.3, h / 2, 0, h * 0.12, 0, h * 0.88);
 
     g.fillStyle(0xdddddd, 1);
-    g.fillCircle(w * 0.2, h / 2, 1.6);
+    g.fillCircle(w * 0.8, h / 2, 1.6);
 
     g.generateTexture('fishTexture', w, h);
     g.destroy();

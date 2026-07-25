@@ -51,8 +51,17 @@
       are caught and delivered
 - [x] Fish-count HUD box in the top-left corner
 
+## Done (v8)
+- [x] Fixed fish texture facing backwards (head/tail were swapped
+      relative to the direction of travel)
+- [x] Top land border enlarged (50px -> 100px) to reserve HUD space
+- [x] Shop box reserved in the top-right corner (no upgrades wired up yet)
+- [x] Hook range limited to a fixed distance from the boat, with clicks
+      beyond it clamped to the edge instead of ignored
+- [x] Faint circle around the boat shows the current hook range
+
 ## Next up (pick based on what you want most)
-- [ ] Limit hook range relative to the boat
+- [ ] Upgrade shop: actual upgrades purchasable with caught fish
 - [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle
@@ -65,7 +74,7 @@
 - [ ] Decide what happens at 0% health beyond restart (score? best time?)
 - [ ] Tune Matter movement feel (currently direct velocity control, same
       snappy feel as the old Arcade setup — could add momentum/drift)
-- [ ] Add a simple UI/HUD (e.g. fish caught counter, numeric health)
+- [ ] Add a numeric health readout to the HUD
 - [ ] Split single-file HTML into `/src` modules once complexity grows
 
 ## Notes / decisions log

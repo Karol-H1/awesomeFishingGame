@@ -61,8 +61,10 @@ the boat contained.
   current position (which may have moved while the hook was out).
 - Only one hook can be active at a time — clicking while it's out or
   returning does nothing.
-- No range limit yet — the hook can be cast anywhere on screen. A
-  proximity limit (relative to the boat) is planned but not built.
+- Range-limited: a cast can't reach further than a fixed distance from
+  the boat. Clicking beyond that distance casts to the edge of the
+  range in the direction clicked, rather than being ignored. A faint
+  circle around the boat shows the current range, and moves with it.
 - Catches fish (see below). Damaging other players' boats is not yet
   implemented.
 
@@ -84,11 +86,17 @@ the boat contained.
   population recovers over time.
 
 ## HUD
-- A small box in the top-left corner of the land border shows
-  "Fish: N" — the running count of fish the player has caught.
+- The top land border is taller than the other three sides
+  specifically to hold the HUD.
+- A small box in the top-left corner shows "Fish: N" — the running
+  count of fish the player has caught.
+- A wider box in the top-right corner reserves space for an upgrade
+  shop (spend caught fish on upgrades). It's currently just an empty
+  labeled box — no upgrades exist yet.
 
 ## Out of scope for MVP (future ideas)
-- Hook range limit, tied to boat proximity.
+- Upgrade shop: actual upgrades purchasable with caught fish, and the
+  buying interaction itself (the box is reserved, nothing is wired up).
 - Other players'/boats to damage with the hook (multiplayer or AI).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
@@ -119,8 +127,9 @@ boat has sunk (health hits 0) until the player restarts.
 
 ## Screen / world size
 - Canvas: 800x600
-- Land border thickness: 50px on all sides
-- Playable water area: 700x500, centered
+- Land border thickness: 50px on left/right/bottom, 100px on top
+  (reserved for the HUD)
+- Playable water area: 700x450, offset toward the bottom of the canvas
 
 This doc is the source of truth for scope. When we add a feature, it
 should get a line here first so we don't lose track of what "done" means.
