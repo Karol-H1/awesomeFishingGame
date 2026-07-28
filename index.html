@@ -48,6 +48,10 @@ const WATER_RIGHT = WIDTH - BORDER;
 const WATER_TOP = TOP_BORDER;
 const WATER_BOTTOM = HEIGHT - BORDER;
 
+// Render depth — fish swim underneath the boat rather than on top of it.
+const DEPTH_FISH = 1;
+const DEPTH_BOAT = 2;
+
 // Canoe texture dimensions and the hitbox carved out of it.
 // The hitbox is trimmed slightly from the sharp bow/stern tips for a
 // hitbox that feels fair rather than exactly tracing the hull outline.
@@ -116,6 +120,7 @@ class MainScene extends Phaser.Scene {
     this.boat = this.matter.add.sprite(BORDER + 90, HEIGHT - BORDER - 90, 'canoeTexture');
     this.boat.health = MAX_HEALTH;
     this.boat.lastHitTime = 0;
+    this.boat.setDepth(DEPTH_BOAT); // above fish, so it doesn't submerge under the boat
 
     // Give the boat a rectangular hitbox matching just the hull
     // silhouette. Unlike Arcade Physics, Matter bodies rotate together
@@ -451,6 +456,7 @@ class MainScene extends Phaser.Scene {
     fish.fishState = 'swimming';
     fish.setTint(FISH_SUBMERGED_TINT);
     fish.setAlpha(FISH_SUBMERGED_ALPHA);
+    fish.setDepth(DEPTH_FISH);
 
     this.fish.push(fish);
   }

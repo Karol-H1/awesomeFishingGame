@@ -69,6 +69,8 @@
       trail outside the range circle as the boat moved away, since the
       range was only checked once at cast time. Now checked every
       frame — the hook turns back the instant it hits the range edge.
+- [x] Fish now render below the boat (explicit depth ordering) instead
+      of on top of it when they overlap
 
 ## Next up (pick based on what you want most)
 - [ ] Upgrade shop: actual upgrades purchasable with caught fish

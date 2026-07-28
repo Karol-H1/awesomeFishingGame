@@ -83,6 +83,8 @@ the boat contained.
   1/32 the width of the lake.
 - Fish are drawn as dark, translucent silhouettes so they read as
   shapes moving under the water's surface, not surface objects.
+- Rendered below the boat, so a fish swimming under the boat is
+  partially hidden by it rather than drawing on top.
 - Catching: while the hook is travelling out toward a click, if it
   passes within a small radius of a swimming fish, that fish is
   caught — it stops circling, turns fully opaque and warm-colored
