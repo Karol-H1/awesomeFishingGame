@@ -7,15 +7,15 @@
   html, body {
     margin: 0;
     padding: 0;
+    width: 100%;
     height: 100%;
+    overflow: hidden;
     background: #1a1a1a;
-    display: flex;
-    justify-content: center;
-    align-items: center;
     font-family: sans-serif;
   }
   #game-container {
-    box-shadow: 0 0 20px rgba(0,0,0,0.6);
+    width: 100vw;
+    height: 100vh;
   }
   #hint {
     position: fixed;
@@ -709,10 +709,20 @@ class MainScene extends Phaser.Scene {
 
 const config = {
   type: Phaser.AUTO,
-  width: WIDTH,
-  height: HEIGHT,
   parent: 'game-container',
   backgroundColor: '#3a7bd5',
+  // Internal game resolution stays a fixed 800x600 — every position and
+  // texture in this file is baked against WIDTH/HEIGHT — but FIT scales
+  // that up to fill the browser window (letterboxed to preserve aspect
+  // ratio) instead of rendering at a fixed pixel size. Phaser translates
+  // pointer coordinates back into game space automatically, so hook
+  // casting etc. needs no changes.
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: WIDTH,
+    height: HEIGHT
+  },
   physics: {
     default: 'matter',
     matter: {

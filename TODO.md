@@ -71,6 +71,10 @@
       frame — the hook turns back the instant it hits the range edge.
 - [x] Fish now render below the boat (explicit depth ordering) instead
       of on top of it when they overlap
+- [x] Game now scales to fill the browser window (Phaser Scale Manager,
+      FIT + CENTER_BOTH) instead of rendering at a fixed 800x600 px
+      block. Internal resolution and all coordinates are unchanged;
+      Phaser translates pointer input automatically.
 
 ## Next up (pick based on what you want most)
 - [ ] Upgrade shop: actual upgrades purchasable with caught fish
