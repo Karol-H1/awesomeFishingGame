@@ -139,16 +139,16 @@ speed matches straight-line speed. Controls are disabled once the
 boat has sunk (health hits 0) until the player restarts.
 
 ## Screen / world size
-- Internal game resolution: 800x600 — every position and texture in
-  the code is baked against this, unchanged regardless of display size.
+- Game resolution matches the actual browser window size at load time
+  (`window.innerWidth`/`innerHeight`), not a fixed canvas. It genuinely
+  fills the screen — no letterbox bars, no cropping — because the
+  lake, land border, HUD, and every spawn position are already
+  computed from WIDTH/HEIGHT rather than hardcoded, so the whole world
+  scales to whatever window it loads into.
 - Land border thickness: 50px on left/right/bottom, 100px on top
-  (reserved for the HUD)
-- Playable water area: 700x450, offset toward the bottom of the canvas
-- Display: the game scales up (or down) to fill the browser window,
-  letterboxed to preserve the 800x600 aspect ratio rather than
-  stretching or cropping. Mouse/click coordinates are translated back
-  into the fixed internal resolution automatically, so hook casting
-  etc. behaves identically at any window size.
+  (reserved for the HUD) — fixed pixel thickness regardless of window size.
+- Trade-off: sizing happens once at load. Resizing the browser window
+  afterward doesn't live-resize the game; reloading the page does.
 
 This doc is the source of truth for scope. When we add a feature, it
 should get a line here first so we don't lose track of what "done" means.

@@ -75,6 +75,11 @@
       FIT + CENTER_BOTH) instead of rendering at a fixed 800x600 px
       block. Internal resolution and all coordinates are unchanged;
       Phaser translates pointer input automatically.
+- [x] FIT still letterboxed on wide monitors (pillarboxed to preserve
+      4:3). Replaced it: WIDTH/HEIGHT are now set from the actual
+      window size at load, so the world itself matches the screen's
+      shape and genuinely fills it edge to edge, no bars. Sizing is
+      still one-shot at load, not live-reactive to later window resizes.
 
 ## Next up (pick based on what you want most)
 - [ ] Upgrade shop: actual upgrades purchasable with caught fish
