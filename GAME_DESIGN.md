@@ -111,6 +111,8 @@ the boat contained.
 - Delivery is a punishment, not a reward: when the shark sprite
   reaches the boat, it deals 20% damage and stuns the boat (controls
   locked, boat tinted red) for 1 second. No fish is added to the count.
+- While stunned, a "Shark Attack" callout appears above the boat, for
+  exactly as long as the stun lasts.
 
 ## HUD
 - The top land border is taller than the other three sides

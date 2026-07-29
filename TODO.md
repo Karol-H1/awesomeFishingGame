@@ -107,6 +107,12 @@
       stuns, boat position genuinely frozen during the stun window and
       resumes after, swimming sharks are pixel-identical to fish.
 
+## Done (v12)
+- [x] "Shark Attack" callout above the boat for the duration of the
+      shark stun — shows/hides in lockstep with the same stun check
+      already driving the tint, positioned relative to the boat each
+      frame like the health bar.
+
 ## Next up (pick based on what you want most)
 - [ ] More upgrades beyond the current four
 - [ ] Add other players'/boats the hook can damage

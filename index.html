@@ -129,6 +129,7 @@ const SHARK_STUN_MS = 1000;
 const SHARK_STUN_TINT = 0xff6666;
 const SHARK_TEX_W = 48;
 const SHARK_TEX_H = 24;
+const SHARK_ATTACK_TEXT_OFFSET_Y = -28; // above the boat, mirroring the health bar below it
 
 class MainScene extends Phaser.Scene {
   constructor() {
@@ -220,6 +221,17 @@ class MainScene extends Phaser.Scene {
     // Health bar — redrawn every frame in update() so it can track
     // the boat's position without being a child of the (rotating) sprite.
     this.healthBarGraphics = this.add.graphics();
+
+    // "Shark Attack" callout — shown above the boat for as long as the
+    // shark stun is active, repositioned each frame in update().
+    this.sharkAttackText = this.add.text(0, 0, 'Shark Attack', {
+      fontFamily: 'sans-serif',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#ff4444',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0.5).setDepth(DEPTH_BOAT + 1).setVisible(false);
 
     // Hook — a plain (non-physics) sprite we move by hand each frame,
     // plus a graphics object for the rope line connecting it to the
@@ -328,6 +340,7 @@ class MainScene extends Phaser.Scene {
     this.gameOver = true;
     this.boat.setTexture('sunkTexture'); // hull disappears, fisherman remains — the boat sank
     this.boat.clearTint(); // in case it sank while showing the shark-stun tint
+    this.sharkAttackText.setVisible(false);
     this.boat.setVelocity(0, 0);
     this.boat.setStatic(true); // freeze it in place; controls are disabled anyway
     this.healthBarGraphics.clear();
@@ -349,8 +362,14 @@ class MainScene extends Phaser.Scene {
     if (this.gameOver) return; // controls disabled once the boat has sunk; press R to restart
 
     const stunned = time < this.stunnedUntil; // set when a caught shark reaches the boat
-    if (stunned) this.boat.setTint(SHARK_STUN_TINT);
-    else this.boat.clearTint();
+    if (stunned) {
+      this.boat.setTint(SHARK_STUN_TINT);
+      this.sharkAttackText.setPosition(this.boat.x, this.boat.y + SHARK_ATTACK_TEXT_OFFSET_Y);
+      this.sharkAttackText.setVisible(true);
+    } else {
+      this.boat.clearTint();
+      this.sharkAttackText.setVisible(false);
+    }
 
     let vx = 0;
     let vy = 0;
