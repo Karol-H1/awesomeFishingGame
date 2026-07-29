@@ -81,9 +81,19 @@
       shape and genuinely fills it edge to edge, no bars. Sizing is
       still one-shot at load, not live-reactive to later window resizes.
 
+## Done (v10)
+- [x] Upgrade shop: row of labeled icon buttons along the top-right of
+      the HUD, bought with caught fish. Three upgrades so far — Repair
+      (restores full health, only when damaged), Boat Speed (+15px/sec,
+      repeatable), Hook Range (+25px, repeatable, range circle updates
+      immediately). Buttons dim when unaffordable/unavailable. Defined
+      as a list of {cost, apply} entries so adding more later is a
+      one-entry change, and the row stays right-aligned automatically.
+- [x] Clicks anywhere in the top HUD strip no longer cast the hook,
+      so clicking the shop can't also fire a cast.
+
 ## Next up (pick based on what you want most)
-- [ ] Upgrade shop: actual upgrades purchasable with caught fish
-      (hook range, boat speed, and hook speed all planned as upgrades)
+- [ ] More upgrades (hook cast/return speed was the next one planned)
 - [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle

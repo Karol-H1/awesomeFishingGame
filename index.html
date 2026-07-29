@@ -44,7 +44,7 @@ const HEIGHT = window.innerHeight;
 const BORDER = 50;      // left/right/bottom distance from screen edge to the water
 const TOP_BORDER = 100; // taller than the other sides — reserved for the HUD (fish count + upgrade shop)
 const BEACH = 18;       // thickness of the sand band, the inner part of the border, next to the water
-const BOAT_SPEED = 75; // deliberately modest — "increase boat speed" is a planned upgrade
+const BOAT_SPEED = 75; // starting speed — "increase boat speed" is an upgrade, see UPGRADE_SPEED_INCREMENT
 
 // Water rect derived from the (asymmetric) border, reused for physics
 // bounds, spawn positions, and the lake texture.
@@ -83,9 +83,22 @@ const ROCK_RADIUS = 20;
 // Hook
 const HOOK_SPEED = 300;      // px/sec, both casting out and returning — "increase hook speed" is a planned upgrade
 const HOOK_ARRIVE_DIST = 4;  // snap-to-target threshold, avoids jitter on the last frame
-const HOOK_RANGE = 125;      // max cast distance from the boat; clicks beyond this clamp to the edge
+const HOOK_RANGE = 125;      // starting max cast distance — "increase hook range" is an upgrade, see UPGRADE_RANGE_INCREMENT
 const HOOK_RANGE_COLOR = 0xffffff;
 const HOOK_RANGE_ALPHA = 0.2;
+
+// Upgrades — bought with caught fish, as a row of icon buttons along
+// the top-right of the HUD. Defined as {cost, apply} pairs in
+// createUpgradeButtons() so adding another later is a one-entry change.
+const UPGRADE_REPAIR_COST = 3;
+const UPGRADE_SPEED_COST = 5;
+const UPGRADE_SPEED_INCREMENT = 15;
+const UPGRADE_RANGE_COST = 5;
+const UPGRADE_RANGE_INCREMENT = 25;
+const UPGRADE_BUTTON_W = 84;
+const UPGRADE_BUTTON_H = 68;
+const UPGRADE_BUTTON_GAP = 8;
+const UPGRADE_ICON_SIZE = 28;
 
 // Fish
 const LAKE_W = WATER_RIGHT - WATER_LEFT;
@@ -115,6 +128,7 @@ class MainScene extends Phaser.Scene {
     this.createSunkTexture();
     this.createHookTexture();
     this.createFishTexture();
+    this.createUpgradeIconTextures();
   }
 
   create() {
@@ -126,6 +140,11 @@ class MainScene extends Phaser.Scene {
     this.boat.health = MAX_HEALTH;
     this.boat.lastHitTime = 0;
     this.boat.setDepth(DEPTH_BOAT); // above fish, so it doesn't submerge under the boat
+
+    // Mutable copies of the starting speed/range — upgrades increment
+    // these at runtime, so they can't stay plain constants.
+    this.boatSpeed = BOAT_SPEED;
+    this.hookRange = HOOK_RANGE;
 
     // Give the boat a rectangular hitbox matching just the hull
     // silhouette. Unlike Arcade Physics, Matter bodies rotate together
@@ -197,13 +216,14 @@ class MainScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (pointer) => {
       if (this.gameOver || this.hookState !== 'idle') return;
+      if (pointer.worldY < TOP_BORDER) return; // clicks in the HUD strip shouldn't cast the hook
       const dx = pointer.worldX - this.boat.x;
       const dy = pointer.worldY - this.boat.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > HOOK_RANGE) {
+      if (dist > this.hookRange) {
         // Beyond range — clamp the cast to the edge of the range circle
         // in the direction clicked, rather than ignoring the click.
-        const scale = HOOK_RANGE / dist;
+        const scale = this.hookRange / dist;
         this.hookTarget.x = this.boat.x + dx * scale;
         this.hookTarget.y = this.boat.y + dy * scale;
       } else {
@@ -242,20 +262,8 @@ class MainScene extends Phaser.Scene {
       color: '#ffffff'
     }).setOrigin(0.5);
 
-    // Shop — reserved space only for now. No upgrades yet; this just
-    // claims the box so future upgrade buttons/icons have somewhere to go.
-    const shopW = 260, shopH = 54;
-    const shopX = WIDTH - 10 - shopW, shopY = 10;
-    this.add.graphics()
-      .fillStyle(0x1a1a1a, 0.55)
-      .fillRoundedRect(shopX, shopY, shopW, shopH, 6)
-      .lineStyle(1, 0xffffff, 0.4)
-      .strokeRoundedRect(shopX, shopY, shopW, shopH, 6);
-    this.add.text(shopX + shopW / 2, shopY + shopH / 2, 'Shop', {
-      fontFamily: 'sans-serif',
-      fontSize: '15px',
-      color: '#ffffff'
-    }).setOrigin(0.5);
+    // Shop — a row of icon buttons, top-right, bought with caught fish.
+    this.createUpgradeButtons();
 
     // Game over state, restart key, and message
     this.gameOver = false;
@@ -297,6 +305,7 @@ class MainScene extends Phaser.Scene {
       this.fish = this.fish.filter((f) => f !== this.hookedFish);
       this.hookedFish = null;
     }
+    this.refreshUpgradeButtons(); // gray out the shop — nothing's purchasable once sunk
     this.gameOverText.setVisible(true);
   }
 
@@ -313,15 +322,15 @@ class MainScene extends Phaser.Scene {
 
     if (vx !== 0 || vy !== 0) {
       const len = Math.sqrt(vx * vx + vy * vy);
-      vx = (vx / len) * BOAT_SPEED;
-      vy = (vy / len) * BOAT_SPEED;
+      vx = (vx / len) * this.boatSpeed;
+      vy = (vy / len) * this.boatSpeed;
       this.boat.rotation = Math.atan2(vy, vx);
     }
 
     // Matter velocity is expressed per simulation step (effectively
     // per 1/60th of a second at the default rate), not per second like
     // Arcade's. Dividing by 60 keeps the on-screen speed matching what
-    // BOAT_SPEED describes; without this the boat would rocket across
+    // this.boatSpeed describes; without this the boat would rocket across
     // the screen almost instantly.
     this.boat.setVelocity(vx / 60, vy / 60);
 
@@ -345,12 +354,13 @@ class MainScene extends Phaser.Scene {
     this.drawHookRange();
     this.updateFish(delta);
     this.updateHook(delta);
+    this.refreshUpgradeButtons();
   }
 
   drawHookRange() {
     this.hookRangeGraphics.clear();
     this.hookRangeGraphics.lineStyle(1, HOOK_RANGE_COLOR, HOOK_RANGE_ALPHA);
-    this.hookRangeGraphics.strokeCircle(this.boat.x, this.boat.y, HOOK_RANGE);
+    this.hookRangeGraphics.strokeCircle(this.boat.x, this.boat.y, this.hookRange);
   }
 
   updateFish(delta) {
@@ -386,16 +396,16 @@ class MainScene extends Phaser.Scene {
       }
     }
 
-    // The cast target is clamped to HOOK_RANGE from the boat at the
+    // The cast target is clamped to this.hookRange from the boat at the
     // moment of casting, but the boat keeps moving while the hook is
     // out — if it moves away from the target, the hook can end up
-    // further than HOOK_RANGE from the boat's *current* position, past
+    // further than this.hookRange from the boat's *current* position, past
     // the edge of the range circle. Recheck every frame and turn the
     // hook back the instant that happens, rather than only at cast time.
     if (this.hookState === 'out') {
       const rdx = this.hook.x - this.boat.x;
       const rdy = this.hook.y - this.boat.y;
-      if (rdx * rdx + rdy * rdy >= HOOK_RANGE * HOOK_RANGE) {
+      if (rdx * rdx + rdy * rdy >= this.hookRange * this.hookRange) {
         this.hookState = 'returning';
       }
     }
@@ -464,6 +474,101 @@ class MainScene extends Phaser.Scene {
     fish.setDepth(DEPTH_FISH);
 
     this.fish.push(fish);
+  }
+
+  createUpgradeButtons() {
+    // Each entry is the whole definition of one upgrade — cost, icon,
+    // when it's purchasable, and what buying it does. Adding another
+    // upgrade later is just another entry here; the row lays itself
+    // out and stays right-aligned regardless of how many there are.
+    const defs = [
+      {
+        label: 'Repair',
+        icon: 'iconRepairTexture',
+        cost: UPGRADE_REPAIR_COST,
+        isAvailable: () => this.boat.health < MAX_HEALTH,
+        apply: () => { this.boat.health = MAX_HEALTH; }
+      },
+      {
+        label: 'Boat Speed',
+        icon: 'iconSpeedTexture',
+        cost: UPGRADE_SPEED_COST,
+        isAvailable: () => true,
+        apply: () => { this.boatSpeed += UPGRADE_SPEED_INCREMENT; }
+      },
+      {
+        label: 'Hook Range',
+        icon: 'iconRangeTexture',
+        cost: UPGRADE_RANGE_COST,
+        isAvailable: () => true,
+        apply: () => { this.hookRange += UPGRADE_RANGE_INCREMENT; }
+      }
+    ];
+
+    const rowWidth = defs.length * UPGRADE_BUTTON_W + (defs.length - 1) * UPGRADE_BUTTON_GAP;
+    const startX = WIDTH - 10 - rowWidth;
+    const y = 10;
+
+    this.upgradeButtons = [];
+
+    defs.forEach((def, i) => {
+      const x = startX + i * (UPGRADE_BUTTON_W + UPGRADE_BUTTON_GAP);
+
+      const box = this.add.graphics();
+      box.fillStyle(0x1a1a1a, 0.55);
+      box.fillRoundedRect(x, y, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H, 6);
+      box.lineStyle(1, 0xffffff, 0.4);
+      box.strokeRoundedRect(x, y, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H, 6);
+
+      const icon = this.add.image(x + UPGRADE_BUTTON_W / 2, y + 24, def.icon);
+
+      const labelText = this.add.text(x + UPGRADE_BUTTON_W / 2, y + 46, def.label, {
+        fontFamily: 'sans-serif',
+        fontSize: '10px',
+        color: '#ffffff'
+      }).setOrigin(0.5);
+
+      const costText = this.add.text(x + UPGRADE_BUTTON_W / 2, y + 59, def.cost + ' fish', {
+        fontFamily: 'sans-serif',
+        fontSize: '10px',
+        color: '#ffd873'
+      }).setOrigin(0.5);
+
+      const button = { def, box, icon, labelText, costText };
+
+      // A Zone rather than making the graphics box itself interactive —
+      // Graphics objects have no inherent size Phaser can hit-test, so
+      // an invisible zone the size of the button is the simplest way to
+      // give it a clickable area.
+      const zone = this.add.zone(x + UPGRADE_BUTTON_W / 2, y + UPGRADE_BUTTON_H / 2, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H);
+      zone.setInteractive({ useHandCursor: true });
+      zone.on('pointerdown', () => this.tryPurchase(button));
+
+      this.upgradeButtons.push(button);
+    });
+
+    this.refreshUpgradeButtons();
+  }
+
+  refreshUpgradeButtons() {
+    for (const button of this.upgradeButtons) {
+      const affordable = !this.gameOver && button.def.isAvailable() && this.fishCount >= button.def.cost;
+      const alpha = affordable ? 1 : 0.4;
+      button.box.setAlpha(alpha);
+      button.icon.setAlpha(alpha);
+      button.labelText.setAlpha(alpha);
+      button.costText.setAlpha(alpha);
+    }
+  }
+
+  tryPurchase(button) {
+    if (this.gameOver) return;
+    const def = button.def;
+    if (!def.isAvailable() || this.fishCount < def.cost) return;
+    this.fishCount -= def.cost;
+    this.fishHudText.setText('Fish: ' + this.fishCount);
+    def.apply();
+    this.refreshUpgradeButtons();
   }
 
   drawHealthBar() {
@@ -676,6 +781,62 @@ class MainScene extends Phaser.Scene {
 
     g.generateTexture('hookTexture', size, size);
     g.destroy();
+  }
+
+  createUpgradeIconTextures() {
+    const s = UPGRADE_ICON_SIZE;
+
+    // Repair — a plus/cross, in the same green the health bar uses when
+    // healthy. Drawn as one closed polygon rather than two overlapping
+    // rects so there's no visible seam where they'd cross.
+    {
+      const g = this.add.graphics();
+      const t = s * 0.32; // arm thickness
+      const lo = s / 2 - t / 2, hi = s / 2 + t / 2;
+      g.fillStyle(0x4caf50, 1);
+      g.beginPath();
+      g.moveTo(lo, 0);
+      g.lineTo(hi, 0);
+      g.lineTo(hi, lo);
+      g.lineTo(s, lo);
+      g.lineTo(s, hi);
+      g.lineTo(hi, hi);
+      g.lineTo(hi, s);
+      g.lineTo(lo, s);
+      g.lineTo(lo, hi);
+      g.lineTo(0, hi);
+      g.lineTo(0, lo);
+      g.lineTo(lo, lo);
+      g.closePath();
+      g.fillPath();
+      g.generateTexture('iconRepairTexture', s, s);
+      g.destroy();
+    }
+
+    // Boat speed — a bold forward chevron with a couple of motion
+    // lines trailing it, like a wake.
+    {
+      const g = this.add.graphics();
+      g.fillStyle(0xffffff, 1);
+      g.fillTriangle(s * 0.35, s * 0.15, s * 0.35, s * 0.85, s * 0.78, s * 0.5);
+      g.lineStyle(3, 0xffffff, 0.6);
+      g.lineBetween(s * 0.04, s * 0.32, s * 0.24, s * 0.32);
+      g.lineBetween(s * 0.04, s * 0.68, s * 0.24, s * 0.68);
+      g.generateTexture('iconSpeedTexture', s, s);
+      g.destroy();
+    }
+
+    // Hook range — a target/rings icon.
+    {
+      const g = this.add.graphics();
+      g.lineStyle(2, 0xffffff, 1);
+      g.strokeCircle(s / 2, s / 2, s * 0.42);
+      g.strokeCircle(s / 2, s / 2, s * 0.24);
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(s / 2, s / 2, s * 0.07);
+      g.generateTexture('iconRangeTexture', s, s);
+      g.destroy();
+    }
   }
 
   createRockTexture() {

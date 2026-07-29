@@ -9,8 +9,8 @@ the boat contained.
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.
 - Movement is free in any direction (not grid-based), at a constant speed.
-  Deliberately kept modest for now — "increase boat speed" is a
-  planned upgrade.
+  Starts deliberately modest — "Boat Speed" is a purchasable upgrade
+  (see Upgrade shop below).
 - The canoe rotates to visually face the direction it's moving.
 - The lake is the playable area; a land border around the screen edge
   is solid and cannot be entered.
@@ -69,6 +69,8 @@ the boat contained.
   the boat. Clicking beyond that distance casts to the edge of the
   range in the direction clicked, rather than being ignored. A faint
   circle around the boat shows the current range, and moves with it.
+  Starts deliberately short — "Hook Range" is a purchasable upgrade
+  (see Upgrade shop below).
 - The range is enforced continuously, not just at cast time: if the
   boat moves away while the hook is out (e.g. casting toward where
   the boat just came from), the hook turns back the instant it hits
@@ -101,15 +103,30 @@ the boat contained.
   specifically to hold the HUD.
 - A small box in the top-left corner shows "Fish: N" — the running
   count of fish the player has caught.
-- A wider box in the top-right corner reserves space for an upgrade
-  shop (spend caught fish on upgrades). It's currently just an empty
-  labeled box — no upgrades exist yet.
+
+## Upgrade shop
+- A row of icon buttons along the top-right of the HUD, bought with
+  caught fish. Each button shows an icon, a label, and its fish cost,
+  and dims when it can't currently be bought (not enough fish, or —
+  for Repair specifically — the boat is already at full health).
+- Current upgrades:
+  - **Repair** (3 fish): restores the boat to full health. Only
+    purchasable when damaged.
+  - **Boat Speed** (5 fish): permanently raises boat speed by 15px/sec.
+    Repeatable, no cap.
+  - **Hook Range** (5 fish): permanently raises the hook's max cast
+    range by 25px. Repeatable, no cap; the faint range circle grows
+    to match immediately.
+- The row is right-aligned and lays itself out from however many
+  upgrades are defined, so adding more later doesn't need repositioning.
+- Clicking anywhere in the top HUD strip (not just on a button) never
+  casts the hook, so clicks on the shop can't accidentally do both.
 
 ## Out of scope for MVP (future ideas)
-- Upgrade shop: actual upgrades purchasable with caught fish, and the
-  buying interaction itself (the box is reserved, nothing is wired up).
-  Planned upgrades: hook range, boat speed, and hook cast/return speed
-  — all deliberately kept modest right now so each has room to grow.
+- More upgrades beyond the three above (hook cast/return speed was
+  the next one planned, plus whatever else comes up).
+- Increasing cost per purchase (upgrades are currently a flat price
+  every time, not scaling with how many times you've bought them).
 - Other players'/boats to damage with the hook (multiplayer or AI).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
