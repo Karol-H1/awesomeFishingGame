@@ -81,7 +81,7 @@ const HEALTH_BAR_OFFSET_Y = 24; // how far below the boat it floats
 const ROCK_RADIUS = 20;
 
 // Hook
-const HOOK_SPEED = 300;      // px/sec, both casting out and returning — "increase hook speed" is a planned upgrade
+const HOOK_SPEED = 300;      // starting px/sec, both casting out and returning — "increase hook speed" is an upgrade
 const HOOK_ARRIVE_DIST = 4;  // snap-to-target threshold, avoids jitter on the last frame
 const HOOK_RANGE = 125;      // starting max cast distance — "increase hook range" is an upgrade, see UPGRADE_RANGE_INCREMENT
 const HOOK_RANGE_COLOR = 0xffffff;
@@ -95,6 +95,8 @@ const UPGRADE_SPEED_COST = 5;
 const UPGRADE_SPEED_INCREMENT = 15;
 const UPGRADE_RANGE_COST = 5;
 const UPGRADE_RANGE_INCREMENT = 25;
+const UPGRADE_HOOK_SPEED_COST = 5;
+const UPGRADE_HOOK_SPEED_INCREMENT = 50;
 const UPGRADE_BUTTON_W = 84;
 const UPGRADE_BUTTON_H = 68;
 const UPGRADE_BUTTON_GAP = 8;
@@ -114,6 +116,20 @@ const FISH_SUBMERGED_TINT = 0x27425c;
 const FISH_SUBMERGED_ALPHA = 0.55; // dark, translucent — reads as a shadow under the surface
 const FISH_CAUGHT_TINT = 0xe8a33d;
 
+// Sharks — swim identically to regular fish (same texture, same orbit
+// behavior, so they're indistinguishable while submerged) but catching
+// one is a trap: on catch it swaps to a large red shark sprite, and
+// delivering it to the boat stuns and damages the boat instead of
+// adding to the fish count. A separate, smaller population cap from
+// regular fish.
+const SHARK_MAX = 2;
+const SHARK_SPAWN_INTERVAL_MS = 30000;
+const SHARK_DAMAGE_PERCENT = 20;
+const SHARK_STUN_MS = 1000;
+const SHARK_STUN_TINT = 0xff6666;
+const SHARK_TEX_W = 48;
+const SHARK_TEX_H = 24;
+
 class MainScene extends Phaser.Scene {
   constructor() {
     super('MainScene');
@@ -128,6 +144,7 @@ class MainScene extends Phaser.Scene {
     this.createSunkTexture();
     this.createHookTexture();
     this.createFishTexture();
+    this.createSharkTexture();
     this.createUpgradeIconTextures();
   }
 
@@ -145,6 +162,11 @@ class MainScene extends Phaser.Scene {
     // these at runtime, so they can't stay plain constants.
     this.boatSpeed = BOAT_SPEED;
     this.hookRange = HOOK_RANGE;
+    this.hookSpeed = HOOK_SPEED;
+
+    // Timestamp (this.time.now) until which boat controls are locked —
+    // set when a caught shark reaches the boat. 0 means not stunned.
+    this.stunnedUntil = 0;
 
     // Give the boat a rectangular hitbox matching just the hull
     // silhouette. Unlike Arcade Physics, Matter bodies rotate together
@@ -248,6 +270,15 @@ class MainScene extends Phaser.Scene {
       callback: () => { if (!this.gameOver) this.spawnFish(); }
     });
 
+    // Sharks share the same array/movement/catch machinery as fish
+    // (flagged via isShark) — see spawnShark(). No initial population;
+    // they only appear from this timer, every 30s if under the cap.
+    this.time.addEvent({
+      delay: SHARK_SPAWN_INTERVAL_MS,
+      loop: true,
+      callback: () => { if (!this.gameOver) this.spawnShark(); }
+    });
+
     // Fish-caught counter, boxed in the top-left corner of the land border.
     this.fishCount = 0;
     const hudX = 10, hudY = 10, hudW = 100, hudH = 32;
@@ -285,13 +316,18 @@ class MainScene extends Phaser.Scene {
     const now = this.time.now;
     if (now < this.boat.lastHitTime + HIT_COOLDOWN_MS) return; // still on cooldown
     this.boat.lastHitTime = now;
-    this.boat.health = Math.max(0, this.boat.health - DAMAGE_PERCENT);
+    this.applyDamage(DAMAGE_PERCENT);
+  }
+
+  applyDamage(percent) {
+    this.boat.health = Math.max(0, this.boat.health - percent);
     if (this.boat.health <= 0) this.sinkBoat();
   }
 
   sinkBoat() {
     this.gameOver = true;
     this.boat.setTexture('sunkTexture'); // hull disappears, fisherman remains — the boat sank
+    this.boat.clearTint(); // in case it sank while showing the shark-stun tint
     this.boat.setVelocity(0, 0);
     this.boat.setStatic(true); // freeze it in place; controls are disabled anyway
     this.healthBarGraphics.clear();
@@ -312,19 +348,25 @@ class MainScene extends Phaser.Scene {
   update(time, delta) {
     if (this.gameOver) return; // controls disabled once the boat has sunk; press R to restart
 
+    const stunned = time < this.stunnedUntil; // set when a caught shark reaches the boat
+    if (stunned) this.boat.setTint(SHARK_STUN_TINT);
+    else this.boat.clearTint();
+
     let vx = 0;
     let vy = 0;
 
-    if (this.keys.left.isDown) vx -= 1;
-    if (this.keys.right.isDown) vx += 1;
-    if (this.keys.up.isDown) vy -= 1;
-    if (this.keys.down.isDown) vy += 1;
+    if (!stunned) {
+      if (this.keys.left.isDown) vx -= 1;
+      if (this.keys.right.isDown) vx += 1;
+      if (this.keys.up.isDown) vy -= 1;
+      if (this.keys.down.isDown) vy += 1;
 
-    if (vx !== 0 || vy !== 0) {
-      const len = Math.sqrt(vx * vx + vy * vy);
-      vx = (vx / len) * this.boatSpeed;
-      vy = (vy / len) * this.boatSpeed;
-      this.boat.rotation = Math.atan2(vy, vx);
+      if (vx !== 0 || vy !== 0) {
+        const len = Math.sqrt(vx * vx + vy * vy);
+        vx = (vx / len) * this.boatSpeed;
+        vy = (vy / len) * this.boatSpeed;
+        this.boat.rotation = Math.atan2(vy, vx);
+      }
     }
 
     // Matter velocity is expressed per simulation step (effectively
@@ -380,7 +422,7 @@ class MainScene extends Phaser.Scene {
     if (this.hookState === 'idle') return;
 
     const dt = delta / 1000;
-    const step = HOOK_SPEED * dt;
+    const step = this.hookSpeed * dt;
 
     // Only look for a catch on the way out, and only until we've already
     // snagged one fish — one hook, one fish per cast.
@@ -422,7 +464,10 @@ class MainScene extends Phaser.Scene {
       } else {
         this.hookState = 'idle';
         this.hook.setVisible(false);
-        if (this.hookedFish) this.deliverFish();
+        if (this.hookedFish) {
+          if (this.hookedFish.isShark) this.deliverShark();
+          else this.deliverFish();
+        }
       }
     } else {
       this.hook.x += (dx / dist) * step;
@@ -442,8 +487,18 @@ class MainScene extends Phaser.Scene {
     // Catching short-circuits the outward cast — no need to keep
     // travelling to the original click point once a fish is on the hook.
     fish.fishState = 'caught';
-    fish.setTint(FISH_CAUGHT_TINT);
-    fish.setAlpha(1);
+    if (fish.isShark) {
+      // Reveal what it actually was — swap from the plain fish look to
+      // the much larger red shark sprite, same convention as a real
+      // fish "coming above water" but with its own true texture rather
+      // than a tint, since sharkTexture is already drawn in color.
+      fish.clearTint();
+      fish.setTexture('sharkTexture');
+      fish.setAlpha(1);
+    } else {
+      fish.setTint(FISH_CAUGHT_TINT);
+      fish.setAlpha(1);
+    }
     this.hookedFish = fish;
     this.hookState = 'returning';
   }
@@ -456,24 +511,49 @@ class MainScene extends Phaser.Scene {
     this.fishHudText.setText('Fish: ' + this.fishCount);
   }
 
-  spawnFish() {
-    if (this.fish.length >= FISH_MAX) return;
+  deliverShark() {
+    this.hookedFish.destroy();
+    this.fish = this.fish.filter((f) => f !== this.hookedFish);
+    this.hookedFish = null;
+    this.stunnedUntil = this.time.now + SHARK_STUN_MS;
+    this.applyDamage(SHARK_DAMAGE_PERCENT);
+  }
 
+  spawnFish() {
+    const fishCount = this.fish.filter((f) => !f.isShark).length;
+    if (fishCount >= FISH_MAX) return;
+    const fish = this.spawnSwimmer();
+    fish.isShark = false;
+  }
+
+  spawnShark() {
+    const sharkCount = this.fish.filter((f) => f.isShark).length;
+    if (sharkCount >= SHARK_MAX) return;
+    const shark = this.spawnSwimmer();
+    shark.isShark = true;
+  }
+
+  // Shared setup for both fish and sharks — while swimming they're
+  // visually and behaviorally identical (same texture, same circling
+  // motion); only the isShark flag set by the caller distinguishes
+  // them, read later when the hook catches one.
+  spawnSwimmer() {
     const margin = FISH_CIRCLE_RADIUS + FISH_TEX_W / 2 + 4;
     const centerX = Phaser.Math.Between(WATER_LEFT + margin, WATER_RIGHT - margin);
     const centerY = Phaser.Math.Between(WATER_TOP + margin, WATER_BOTTOM - margin);
 
-    const fish = this.add.image(centerX + FISH_CIRCLE_RADIUS, centerY, 'fishTexture');
-    fish.orbitCenterX = centerX;
-    fish.orbitCenterY = centerY;
-    fish.orbitAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    fish.orbitDir = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
-    fish.fishState = 'swimming';
-    fish.setTint(FISH_SUBMERGED_TINT);
-    fish.setAlpha(FISH_SUBMERGED_ALPHA);
-    fish.setDepth(DEPTH_FISH);
+    const swimmer = this.add.image(centerX + FISH_CIRCLE_RADIUS, centerY, 'fishTexture');
+    swimmer.orbitCenterX = centerX;
+    swimmer.orbitCenterY = centerY;
+    swimmer.orbitAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    swimmer.orbitDir = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
+    swimmer.fishState = 'swimming';
+    swimmer.setTint(FISH_SUBMERGED_TINT);
+    swimmer.setAlpha(FISH_SUBMERGED_ALPHA);
+    swimmer.setDepth(DEPTH_FISH);
 
-    this.fish.push(fish);
+    this.fish.push(swimmer);
+    return swimmer;
   }
 
   createUpgradeButtons() {
@@ -502,6 +582,13 @@ class MainScene extends Phaser.Scene {
         cost: UPGRADE_RANGE_COST,
         isAvailable: () => true,
         apply: () => { this.hookRange += UPGRADE_RANGE_INCREMENT; }
+      },
+      {
+        label: 'Hook Speed',
+        icon: 'iconHookSpeedTexture',
+        cost: UPGRADE_HOOK_SPEED_COST,
+        isAvailable: () => true,
+        apply: () => { this.hookSpeed += UPGRADE_HOOK_SPEED_INCREMENT; }
       }
     ];
 
@@ -767,6 +854,47 @@ class MainScene extends Phaser.Scene {
     g.destroy();
   }
 
+  createSharkTexture() {
+    // Only ever shown after a catch (while swimming, sharks use the
+    // plain fishTexture like everything else) — so this can just be
+    // drawn in its true red colors directly, no tint trickery needed.
+    // Same +x-facing convention as the other sprites, just much bigger.
+    const w = SHARK_TEX_W;
+    const h = SHARK_TEX_H;
+    const g = this.add.graphics();
+
+    g.fillStyle(0xc62828, 1);
+    g.lineStyle(2, 0x7a1313, 1);
+    g.beginPath();
+    g.moveTo(w * 0.05, h / 2);
+    g.lineTo(w * 0.2, h * 0.28);
+    g.lineTo(w * 0.62, h * 0.32);
+    g.lineTo(w * 0.95, h / 2);   // pointed snout — the front
+    g.lineTo(w * 0.62, h * 0.68);
+    g.lineTo(w * 0.2, h * 0.72);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+
+    // Dorsal fin
+    g.fillStyle(0xa71f1f, 1);
+    g.fillTriangle(w * 0.42, h * 0.28, w * 0.52, h * 0.02, w * 0.6, h * 0.3);
+
+    // Tail fin, at the back (-x)
+    g.fillTriangle(w * 0.08, h / 2, 0, h * 0.15, 0, h * 0.85);
+
+    // Pale belly highlight for a bit of depth
+    g.fillStyle(0xe57373, 0.7);
+    g.fillEllipse(w * 0.5, h * 0.58, w * 0.4, h * 0.16);
+
+    // Eye
+    g.fillStyle(0x111111, 1);
+    g.fillCircle(w * 0.78, h * 0.46, 1.8);
+
+    g.generateTexture('sharkTexture', w, h);
+    g.destroy();
+  }
+
   createHookTexture() {
     const size = 14;
     const g = this.add.graphics();
@@ -835,6 +963,23 @@ class MainScene extends Phaser.Scene {
       g.fillStyle(0xffffff, 1);
       g.fillCircle(s / 2, s / 2, s * 0.07);
       g.generateTexture('iconRangeTexture', s, s);
+      g.destroy();
+    }
+
+    // Hook speed — a lightning bolt.
+    {
+      const g = this.add.graphics();
+      g.fillStyle(0xffe066, 1);
+      g.beginPath();
+      g.moveTo(s * 0.55, 0);
+      g.lineTo(s * 0.15, s * 0.55);
+      g.lineTo(s * 0.42, s * 0.55);
+      g.lineTo(s * 0.35, s);
+      g.lineTo(s * 0.85, s * 0.4);
+      g.lineTo(s * 0.55, s * 0.4);
+      g.closePath();
+      g.fillPath();
+      g.generateTexture('iconHookSpeedTexture', s, s);
       g.destroy();
     }
   }

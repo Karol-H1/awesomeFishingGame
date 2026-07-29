@@ -61,8 +61,8 @@ the boat contained.
 - Click anywhere to cast the hook from the boat toward the clicked
   point. It travels out, then automatically returns to the boat's
   current position (which may have moved while the hook was out).
-  Cast/return speed is deliberately modest — "increase hook speed" is
-  a planned upgrade.
+  Cast/return speed starts deliberately modest — "Hook Speed" is a
+  purchasable upgrade (see Upgrade shop below).
 - Only one hook can be active at a time — clicking while it's out or
   returning does nothing.
 - Range-limited: a cast can't reach further than a fixed distance from
@@ -76,8 +76,8 @@ the boat contained.
   the boat just came from), the hook turns back the instant it hits
   the edge of the range circle, rather than being able to trail
   outside it.
-- Catches fish (see below). Damaging other players' boats is not yet
-  implemented.
+- Catches fish and sharks (see below). Damaging other players' boats
+  is not yet implemented.
 
 ## Fish
 - Up to 10 fish swim in the lake at a time. Each fish is anchored to
@@ -98,6 +98,20 @@ the boat contained.
   a replacement fish (respecting the 10-fish cap) so the lake's
   population recovers over time.
 
+## Sharks
+- A trap disguised as a fish: while swimming, a shark is visually and
+  behaviorally identical to a regular fish (same silhouette, same
+  circling motion) — there's no way to tell them apart until one is
+  caught.
+- Up to 2 sharks can be out at once, independent of the 10-fish cap.
+  A timer tries to spawn one every 30 seconds if under that cap.
+- Catching one reveals it: it swaps to a much larger red shark sprite
+  (rather than just turning opaque like a regular fish) and rides the
+  hook back to the boat the same way.
+- Delivery is a punishment, not a reward: when the shark sprite
+  reaches the boat, it deals 20% damage and stuns the boat (controls
+  locked, boat tinted red) for 1 second. No fish is added to the count.
+
 ## HUD
 - The top land border is taller than the other three sides
   specifically to hold the HUD.
@@ -117,14 +131,15 @@ the boat contained.
   - **Hook Range** (5 fish): permanently raises the hook's max cast
     range by 25px. Repeatable, no cap; the faint range circle grows
     to match immediately.
+  - **Hook Speed** (5 fish): permanently raises hook cast/return speed
+    by 50px/sec. Repeatable, no cap.
 - The row is right-aligned and lays itself out from however many
   upgrades are defined, so adding more later doesn't need repositioning.
 - Clicking anywhere in the top HUD strip (not just on a button) never
   casts the hook, so clicks on the shop can't accidentally do both.
 
 ## Out of scope for MVP (future ideas)
-- More upgrades beyond the three above (hook cast/return speed was
-  the next one planned, plus whatever else comes up).
+- More upgrades beyond the four above.
 - Increasing cost per purchase (upgrades are currently a flat price
   every time, not scaling with how many times you've bought them).
 - Other players'/boats to damage with the hook (multiplayer or AI).

@@ -92,8 +92,23 @@
 - [x] Clicks anywhere in the top HUD strip no longer cast the hook,
       so clicking the shop can't also fire a cast.
 
+## Done (v11)
+- [x] Hook Speed upgrade (5 fish, +50px/sec, repeatable) — 4th shop
+      button, HOOK_SPEED converted to mutable this.hookSpeed
+- [x] Sharks: swim identically to fish (same texture/behavior, share
+      the fish array via an isShark flag), capped at 2 concurrently
+      (independent of the 10-fish cap), spawn timer every 30s. Catching
+      one swaps it to a much larger red shark sprite; delivering it to
+      the boat deals 20% damage and stuns the boat (locked controls,
+      red tint) for 1 second — no fish awarded. hitRock()'s damage
+      logic factored into a shared applyDamage() used by both.
+- [x] Verified end-to-end via injected scene access: shark cap holds
+      at 2, catch swaps texture/size correctly, delivery damages and
+      stuns, boat position genuinely frozen during the stun window and
+      resumes after, swimming sharks are pixel-identical to fish.
+
 ## Next up (pick based on what you want most)
-- [ ] More upgrades (hook cast/return speed was the next one planned)
+- [ ] More upgrades beyond the current four
 - [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle
