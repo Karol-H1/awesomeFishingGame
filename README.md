@@ -1,4 +1,4 @@
-# Lake Canoe
+# Awesome Fishing Game
 
 A small 2D browser game: paddle a wooden canoe with a fisherman aboard
 around a lake, bounded by a land border on the screen edges.

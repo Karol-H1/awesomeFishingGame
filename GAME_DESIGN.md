@@ -1,4 +1,4 @@
-# Lake Canoe — Game Design Doc
+# Awesome Fishing Game — Game Design Doc
 
 ## Concept
 A small top-down 2D game. The player controls a wooden canoe with a
