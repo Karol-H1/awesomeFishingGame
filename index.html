@@ -170,10 +170,10 @@ const UPGRADE_RANGE_COST = 5;
 const UPGRADE_RANGE_INCREMENT = 25;
 const UPGRADE_HOOK_SPEED_COST = 5;
 const UPGRADE_HOOK_SPEED_INCREMENT = 50;
-const UPGRADE_BUTTON_W = Math.round(84 * UI_SCALE);
-const UPGRADE_BUTTON_H = Math.round(68 * UI_SCALE);
-const UPGRADE_BUTTON_GAP = Math.round(8 * UI_SCALE);
-const UPGRADE_ICON_SIZE = Math.round(28 * UI_SCALE); // icon texture is drawn fully proportional to this, safe to scale directly
+const UPGRADE_BUTTON_W = Math.round(84 * TOUCH_UI_SCALE);
+const UPGRADE_BUTTON_H = Math.round(68 * TOUCH_UI_SCALE);
+const UPGRADE_BUTTON_GAP = Math.round(8 * TOUCH_UI_SCALE);
+const UPGRADE_ICON_SIZE = Math.round(28 * TOUCH_UI_SCALE); // icon texture is drawn fully proportional to this, safe to scale directly
 
 // Touch controls — only created on IS_TOUCH_DEVICE (see
 // createTouchControls()). Joystick bottom-left replaces WASD; hook
@@ -1404,40 +1404,44 @@ class MainScene extends Phaser.Scene {
     const startX = WIDTH - margin - rowWidth;
     const y = margin;
 
-    // Icon/label/cost vertical offsets within the button, tuned against
-    // the original UPGRADE_BUTTON_H (68) — scaled the same way so they
-    // stay proportional (not overflowing) as the button itself shrinks.
-    const iconOffsetY = Math.round(24 * UI_SCALE);
-    const labelOffsetY = Math.round(46 * UI_SCALE);
-    const costOffsetY = Math.round(59 * UI_SCALE);
-    const buttonFontSize = Math.round(10 * UI_SCALE) + 'px';
+    // Icon/cost vertical offsets within the button, tuned against the
+    // original UPGRADE_BUTTON_H (68) — scaled the same way so they stay
+    // proportional (not overflowing) as the button itself resizes. No
+    // label row anymore (see def.label below) — that space goes to a
+    // bit more breathing room around the icon instead.
+    const iconOffsetY = Math.round(28 * TOUCH_UI_SCALE);
+    const costOffsetY = Math.round(58 * TOUCH_UI_SCALE);
+    const buttonFontSize = Math.round(10 * TOUCH_UI_SCALE) + 'px';
 
     this.upgradeButtons = [];
 
     defs.forEach((def, i) => {
       const x = startX + i * (UPGRADE_BUTTON_W + UPGRADE_BUTTON_GAP);
 
-      const box = this.add.graphics();
+      // Depth above fish/boat (DEPTH_BOAT=2), not just default (0) — on a
+      // short touch screen this row is now tall enough to dip slightly
+      // below TOP_BORDER into the top of the water (see UPGRADE_BUTTON_H
+      // above), and without this a fish/boat passing underneath would
+      // render on top of the button instead of behind it.
+      const box = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
       box.fillStyle(0x1a1a1a, 0.55);
       box.fillRoundedRect(x, y, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H, 6);
       box.lineStyle(1, 0xffffff, 0.4);
       box.strokeRoundedRect(x, y, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H, 6);
 
-      const icon = this.add.image(x + UPGRADE_BUTTON_W / 2, y + iconOffsetY, def.icon);
-
-      const labelText = this.add.text(x + UPGRADE_BUTTON_W / 2, y + labelOffsetY, def.label, {
-        fontFamily: 'sans-serif',
-        fontSize: buttonFontSize,
-        color: '#ffffff'
-      }).setOrigin(0.5);
+      // No text label (e.g. "Boat Speed") — the icon alone identifies the
+      // upgrade, same info a player would otherwise get from hovering/
+      // tapping, and dropping it frees the whole button for a bigger,
+      // more legible icon on a small screen instead of three cramped rows.
+      const icon = this.add.image(x + UPGRADE_BUTTON_W / 2, y + iconOffsetY, def.icon).setDepth(DEPTH_TOUCH_UI);
 
       const costText = this.add.text(x + UPGRADE_BUTTON_W / 2, y + costOffsetY, def.cost + ' fish', {
         fontFamily: 'sans-serif',
         fontSize: buttonFontSize,
         color: '#ffd873'
-      }).setOrigin(0.5);
+      }).setOrigin(0.5).setDepth(DEPTH_TOUCH_UI);
 
-      const button = { def, box, icon, labelText, costText };
+      const button = { def, box, icon, costText };
 
       // A Zone rather than making the graphics box itself interactive —
       // Graphics objects have no inherent size Phaser can hit-test, so
@@ -1459,7 +1463,6 @@ class MainScene extends Phaser.Scene {
       const alpha = affordable ? 1 : 0.4;
       button.box.setAlpha(alpha);
       button.icon.setAlpha(alpha);
-      button.labelText.setAlpha(alpha);
       button.costText.setAlpha(alpha);
     }
   }

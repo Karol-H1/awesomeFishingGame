@@ -152,9 +152,10 @@ the boat contained.
 
 ## Upgrade shop
 - A row of icon buttons along the top-right of the HUD, bought with
-  caught fish. Each button shows an icon, a label, and its fish cost,
-  and dims when it can't currently be bought (not enough fish, or —
-  for Repair specifically — the boat is already at full health).
+  caught fish. Each button shows an icon and its fish cost (no text
+  label — the icon alone identifies the upgrade), and dims when it
+  can't currently be bought (not enough fish, or — for Repair
+  specifically — the boat is already at full health).
 - Current upgrades:
   - **Repair** (3 fish): restores the boat to full health. Only
     purchasable when damaged.
@@ -334,6 +335,19 @@ the boat contained.
   `HEIGHT - btnH - margin` so it always stays fully on-screen, only
   moving up from its normal position when a short screen actually
   requires it.
+- The upgrade shop buttons use `TOUCH_UI_SCALE` too, and dropped their
+  text label (e.g. "Boat Speed") entirely — the icon alone identifies
+  the upgrade. Three stacked elements (icon/label/cost) in a small
+  button read as illegible on a phone; two elements (icon/cost) leaves
+  room for a properly-sized icon instead. Since the button row can now
+  be taller than `TOP_BORDER` on a short touch screen, it's allowed to
+  visually spill slightly past the top of the water rather than making
+  `TOP_BORDER` itself grow (which would shrink the lake for everyone,
+  touch or not, just to make room for a HUD element). The row's
+  Graphics/icon/text are given `DEPTH_TOUCH_UI` so a fish or boat
+  passing underneath renders behind the buttons instead of in front —
+  needed now that the row can genuinely overlap the water, unlike
+  before when it always stayed entirely inside the border.
 
 ## Out of scope for MVP (future ideas)
 - More upgrades beyond the four above.
@@ -352,10 +366,6 @@ the boat contained.
   trusts the attacker's client to report an honest steal amount).
 - Live-resizing/re-orienting an already-running game instead of
   reloading (see Mobile / touch controls above).
-- Bigger/repositionable touch targets for the upgrade shop specifically
-  (currently unchanged from desktop — they're already comfortably
-  above typical minimum touch-target sizes, but haven't been tuned for
-  a small phone screen specifically).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
 - Sound effects (paddle splash, ambient lake sounds) and music.

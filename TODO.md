@@ -373,16 +373,43 @@
       touch capability (`IS_TOUCH_DEVICE` is fixed at page load from
       real touch support) — verified by arithmetic/code review instead.
 
+## Done (v23)
+- [x] Upgrade shop buttons now use `TOUCH_UI_SCALE` too (icon and cost
+      text were previously stuck at plain `UI_SCALE`, shrinking to a
+      ~5px font / 14px icon on a short phone screen — reported as "hard
+      to tell what is on the buttons").
+- [x] Dropped the text label under each icon (e.g. "Boat Speed") — with
+      three stacked elements (icon/label/cost) a small button had no
+      room for a legible icon; with two (icon/cost) the icon gets most
+      of the button. The icon alone identifies the upgrade, same as it
+      always did for anyone who'd already learned the four icons.
+- [x] Since the button row can now be taller than `TOP_BORDER` on a
+      short touch screen, let it spill slightly past the top of the
+      water rather than growing `TOP_BORDER` to fit it — growing the
+      border would shrink the lake for every player, touch or not,
+      just to make room for a HUD element. Gave the row's Graphics/
+      icon/text `DEPTH_TOUCH_UI` so fish/boats swimming underneath
+      render behind the buttons instead of on top, which wasn't a
+      concern before since the row always stayed fully inside the
+      border.
+- [x] Verified live on desktop (unaffected — `TOUCH_UI_SCALE` equals
+      plain `UI_SCALE` for non-touch): icons render clearly with just
+      the cost underneath, purchase click still works, no console
+      errors. The `TOUCH_UI_SCALE` floor's actual effect on a touch
+      device — bigger icon, row spilling into the water, depth
+      ordering against a fish/boat passing underneath — couldn't be
+      visually confirmed for the same reason as v22 (no genuine touch
+      emulation available here); checked by arithmetic instead (at a
+      390px-tall touch screen the row's bottom edge lands ~14px past
+      `WATER_TOP`, confirming the spill and the need for the depth fix).
+
 ## Next up (pick based on what you want most)
-- [ ] Bigger/repositionable touch targets for the upgrade shop
-      specifically — still unchanged from desktop; enlarging them like
-      the other touch buttons risks overlapping the top HUD border,
-      which would need its own (larger) pass to fix properly
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
       button, v20's cross-device sync + visible hooks, v21's Controls
-      panel, and v22's bigger touch targets + unstuck Controls button
-      all work in practice (this session could only simulate window
-      dimensions and differing lake sizes, not genuine touch)
+      panel, v22's bigger touch targets + unstuck Controls button, and
+      v23's bigger/simplified upgrade buttons all work in practice
+      (this session could only simulate window dimensions and
+      differing lake sizes, not genuine touch)
 - [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
       touch device — neither has had a genuine touch-input playtest yet
 - [ ] Sync fish/sharks so all players share one pool instead of each
