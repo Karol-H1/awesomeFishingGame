@@ -173,15 +173,40 @@ the boat contained.
   disappears for everyone else. Restarting your own boat (R, or a
   fresh sink) cleans up and re-registers the same player ID rather than
   leaving a duplicate behind.
-- Fish, sharks, hooks, and upgrades are **not** synced yet — every
-  player still has their own independent lake population and fish
-  count. This is deliberately just the "shared presence" foundation;
-  the next feature (battling) is what will make players actually
-  interact with each other's boats.
+- Fish and sharks are **not** synced — every player still has their
+  own independent lake population. Fish *count* is synced (see
+  Battling below), purely so opponents know how much they stand to
+  steal.
 - The Firebase project's Realtime Database is currently running in
   test mode (open read/write, no auth) — fine for a small prototype
   among friends, but worth locking down with real security rules
   before sharing the game publicly.
+
+## Battling
+- Hooking another player's boat (instead of a fish) deals 10% damage
+  and steals up to 2 of their caught fish — piracy, not fishing.
+- Detection is entirely client-side on the attacker: since every
+  player's boat position is already synced (see Multiplayer above),
+  the attacker's own hook checks its distance to each remote boat the
+  same way it checks for fish, and turns back the instant it's close
+  enough to one — one hit per cast, same as catching a fish, and nothing
+  rides back on the hook (a hit is a tag, not a catch).
+- Ownership stays with the victim: rather than the attacker directly
+  editing the victim's health/fish count in the shared database (which
+  would fight with the victim's own periodic self-sync), the attacker
+  drops a message in the victim's personal "hits" inbox saying how many
+  fish it's taking. The victim applies the damage and fish loss to
+  their own state the next time they're connected, and shows the
+  "Ouch" callout above their own boat — the same "you own your own
+  data" model as everything else each player syncs about themself. A
+  sunk boat can't be hit (no health or fish left to take).
+- The fish-steal amount is decided from the victim's last-known synced
+  fish count, since the attacker only has that, not real-time access
+  to the victim's true count — a small window for imprecision under
+  simultaneous multi-attacker edge cases, acceptable for a casual game
+  rather than something worth a full request/response handshake over.
+- If the victim is offline when hit, the message just waits in their
+  inbox and gets applied automatically next time they reconnect.
 
 ## Out of scope for MVP (future ideas)
 - More upgrades beyond the four above.
@@ -191,7 +216,8 @@ the boat contained.
   instead of independent copies.
 - Smoothing/interpolating remote boat movement between network updates
   instead of snapping directly to the latest reported position.
-- Damaging other players' boats with the hook (the battling feature).
+- A more authoritative/anti-cheat-resistant battling model (currently
+  trusts the attacker's client to report an honest steal amount).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
 - Sound effects (paddle splash, ambient lake sounds) and music.
@@ -211,7 +237,7 @@ the boat contained.
 | A   | Move left |
 | S   | Move down |
 | D   | Move right |
-| Click | Cast the hook toward the clicked point |
+| Click | Cast the hook toward the clicked point — catches fish, or hits another player's boat if it's closer |
 | H   | Toggle hitbox debug view |
 | R   | Restart the game |
 

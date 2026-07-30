@@ -137,9 +137,9 @@ const SHARK_ATTACK_TEXT_OFFSET_Y = -28; // above the boat, mirroring the health 
 // Multiplayer — Firebase Realtime Database, chosen so there's no server
 // to run ourselves: every client just reads/writes the same free-tier
 // hosted database. Each player writes their own boat's state under
-// /players/{id} and renders everyone else's from the same path. Fish,
-// sharks, hooks and upgrades stay local for now — this is just shared
-// presence (see boats moving together), the foundation for battling.
+// /players/{id} and renders everyone else's from the same path. Fish
+// and sharks stay local per-player; boats can now hook and steal from
+// each other too (see Battling below).
 const firebaseConfig = {
   apiKey: "AIzaSyD_NbpwH8rek02FSCGB4oo_j9-s8yO49w8",
   authDomain: "awesome-fishing-game.firebaseapp.com",
@@ -161,6 +161,19 @@ if (!playerId) {
 }
 
 const NETWORK_SYNC_INTERVAL_MS = 100; // ~10 updates/sec written to Firebase
+
+// Battling — hooking another player's boat (rather than a fish) damages
+// them and steals some of their catch. The attacker detects the hit
+// locally (they already have the other boat's synced position) and
+// drops a message in the victim's own "hits" inbox in Firebase; the
+// victim is the one who actually applies the damage/fish loss to their
+// own authoritative state and shows the "Ouch" callout, the same
+// ownership model as everything else each player syncs about themself.
+const PLAYER_HIT_DAMAGE_PERCENT = 10;
+const PLAYER_HIT_FISH_STEAL_MAX = 2;
+const BOAT_HIT_RADIUS = 26; // hook-to-opponent-boat distance that counts as a hit
+const OUCH_TEXT_DURATION_MS = 900;
+const OUCH_TEXT_OFFSET_Y = -34; // a bit higher than the shark-attack text so the two don't fully overlap
 
 class TitleScene extends Phaser.Scene {
   constructor() {
@@ -353,6 +366,18 @@ class MainScene extends Phaser.Scene {
       strokeThickness: 3
     }).setOrigin(0.5).setDepth(DEPTH_BOAT + 1).setVisible(false);
 
+    // "Ouch" callout — shown above the boat briefly after another
+    // player's hook hits us, set by handleIncomingHit().
+    this.ouchUntil = 0;
+    this.ouchText = this.add.text(0, 0, 'Ouch', {
+      fontFamily: 'sans-serif',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#ffb84d',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0.5).setDepth(DEPTH_BOAT + 1).setVisible(false);
+
     // Hook — a plain (non-physics) sprite we move by hand each frame,
     // plus a graphics object for the rope line connecting it to the
     // boat. 'idle' means docked/hidden; a click sends it 'out' toward
@@ -468,13 +493,32 @@ class MainScene extends Phaser.Scene {
       this.removeRemoteBoat(snap.key);
     });
 
+    // Our own "hits" inbox — other players push here when their hook
+    // tags our boat (see hitOpponent()); we're the ones who apply the
+    // damage/fish loss to our own state, then remove the entry so it
+    // isn't processed twice.
+    this.hitsRef = db.ref('hits/' + playerId);
+    this.hitsRef.on('child_added', (snap) => this.handleIncomingHit(snap));
+
     // Detach listeners and clear our own record when this scene instance
     // ends (restart or otherwise) so they don't pile up across restarts.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.playersRef.off();
+      this.hitsRef.off();
       this.playerRef.onDisconnect().cancel();
       this.playerRef.remove();
     });
+  }
+
+  handleIncomingHit(snap) {
+    const hit = snap.val();
+    snap.ref.remove(); // acknowledge — don't process the same hit twice
+    if (this.gameOver) return;
+    this.applyDamage(PLAYER_HIT_DAMAGE_PERCENT);
+    const stolen = Math.min(hit.fishStolen || 0, this.fishCount);
+    this.fishCount -= stolen;
+    this.fishHudText.setText('Fish: ' + this.fishCount);
+    this.ouchUntil = this.time.now + OUCH_TEXT_DURATION_MS;
   }
 
   addRemoteBoat(id, data) {
@@ -497,6 +541,7 @@ class MainScene extends Phaser.Scene {
   updateRemoteBoat(id, data) {
     const remote = this.remoteBoats[id];
     if (!remote) { this.addRemoteBoat(id, data); return; }
+    remote.data = data; // last-known state, read by the hit-detection check in updateHook()
     remote.sprite.setTexture(data.sunk ? 'sunkTexture' : 'canoeTexture');
     remote.sprite.setPosition(data.x, data.y);
     remote.sprite.rotation = data.rotation || 0;
@@ -565,7 +610,7 @@ class MainScene extends Phaser.Scene {
     // out early once gameOver is set, so push the final sunk state once
     // here — otherwise other players would see our last-known position
     // frozen mid-lake without any indication we'd actually sunk.
-    if (this.playerRef) this.playerRef.update({ health: 0, sunk: true });
+    if (this.playerRef) this.playerRef.update({ health: 0, fishCount: this.fishCount, sunk: true });
   }
 
   update(time, delta) {
@@ -579,6 +624,14 @@ class MainScene extends Phaser.Scene {
     } else {
       this.boat.clearTint();
       this.sharkAttackText.setVisible(false);
+    }
+
+    const showingOuch = time < this.ouchUntil; // set when another player's hook hits us
+    if (showingOuch) {
+      this.ouchText.setPosition(this.boat.x, this.boat.y + OUCH_TEXT_OFFSET_Y);
+      this.ouchText.setVisible(true);
+    } else {
+      this.ouchText.setVisible(false);
     }
 
     let vx = 0;
@@ -637,6 +690,7 @@ class MainScene extends Phaser.Scene {
         y: Math.round(this.boat.y),
         rotation: this.boat.rotation,
         health: this.boat.health,
+        fishCount: this.fishCount,
         sunk: false
       });
     }
@@ -676,6 +730,23 @@ class MainScene extends Phaser.Scene {
         const fdy = fish.y - this.hook.y;
         if (fdx * fdx + fdy * fdy <= FISH_CATCH_RADIUS * FISH_CATCH_RADIUS) {
           this.catchFish(fish);
+          break;
+        }
+      }
+    }
+
+    // Same idea, but for other players' boats — one hit per cast, and
+    // only while still heading out (mirrors the fish check above).
+    // Position comes from each remote boat's last synced state, since
+    // we don't need to ask them — we already have it.
+    if (this.hookState === 'out' && !this.hookedFish) {
+      for (const id in this.remoteBoats) {
+        const remote = this.remoteBoats[id];
+        if (!remote.data || remote.data.sunk) continue;
+        const rdx = remote.sprite.x - this.hook.x;
+        const rdy = remote.sprite.y - this.hook.y;
+        if (rdx * rdx + rdy * rdy <= BOAT_HIT_RADIUS * BOAT_HIT_RADIUS) {
+          this.hitOpponent(id, remote);
           break;
         }
       }
@@ -744,6 +815,24 @@ class MainScene extends Phaser.Scene {
     }
     this.hookedFish = fish;
     this.hookState = 'returning';
+  }
+
+  hitOpponent(id, remote) {
+    // Nothing rides back on the hook for a boat hit (unlike a fish) —
+    // it's a tag, not a catch — so just turn the hook around.
+    this.hookState = 'returning';
+
+    const available = remote.data.fishCount || 0;
+    const stolen = Math.min(PLAYER_HIT_FISH_STEAL_MAX, available);
+    this.fishCount += stolen;
+    this.fishHudText.setText('Fish: ' + this.fishCount);
+
+    // We only know the victim's fish count as of their last synced
+    // update, so we tell them how many we're taking rather than taking
+    // it directly — they apply it to their own authoritative state (see
+    // handleIncomingHit()), clamped defensively in case it's changed
+    // since.
+    db.ref('hits/' + id).push({ fishStolen: stolen });
   }
 
   deliverFish() {

@@ -141,9 +141,44 @@
       one tab showed up live as a labeled remote boat with an updating
       health bar in the other, in both directions.
 
+## Done (v15)
+- [x] Battling: hooking another player's boat instead of a fish deals
+      10% damage and steals up to 2 of their fish. Attacker detects the
+      hit client-side (their hook checking distance to each already-
+      synced remote boat, same as the fish-catch check); one hit per
+      cast, hook turns back immediately, nothing rides home on it.
+      Victim's own fish count is now synced too (alongside position/
+      health/sunk) purely so attackers know how much is worth stealing.
+- [x] "Hits" are delivered via a per-victim Firebase inbox rather than
+      the attacker writing directly to the victim's record — the
+      attacker pushes `{fishStolen}`, the victim applies the damage/
+      fish loss to their own authoritative state and shows "Ouch"
+      above their boat, then deletes the processed entry. Keeps every
+      player owning writes to their own state, and means a hit lands
+      correctly even if the victim was offline at the moment of impact.
+- [x] Verified live with two browser tabs acting as separate players:
+      point-blank hit dealt exactly 10% damage; forcing the hit-detection
+      tick directly confirmed the fish steal is exactly
+      `min(2, victim's last-synced fish count)`; repeated hits (used
+      while debugging) correctly stacked damage and drained the
+      victim's fish count to exactly 0 without going negative; every
+      hit set the victim's "Ouch" timer. Testing surfaced two quirks
+      worth remembering for next time, neither of which is a bug in
+      the feature itself:
+      (1) a backgrounded/non-fronted browser tab in the preview tool
+      stops ticking Phaser's update loop entirely (so its own periodic
+      Firebase sync pauses) but *keeps processing incoming Firebase
+      events*, since those ride the WebSocket connection rather than
+      requestAnimationFrame — worth remembering when a "player" seems
+      unresponsive during two-tab testing;
+      (2) two tabs of the same browser truly share one `localStorage`,
+      so setting a distinct player ID on one tab and then immediately
+      switching to set a different ID on another, before the first has
+      reloaded and locked its ID into memory, silently overwrites both
+      to the same value — set-and-reload one tab fully before touching
+      the next.
+
 ## Next up (pick based on what you want most)
-- [ ] Battling: let the hook damage other players' boats now that
-      boats are visible to each other
 - [ ] Sync fish/sharks so all players share one pool instead of each
       having an independent copy
 - [ ] Smooth/interpolate remote boat movement between network updates
