@@ -178,7 +178,23 @@
       to the same value — set-and-reload one tab fully before touching
       the next.
 
+## Done (v16)
+- [x] Spacebar auto-aim: casts the hook at the nearest swimming
+      fish/shark or other player's (non-sunk) boat that's within hook
+      range, doing nothing if none qualify. Refactored the click
+      handler's cast logic into a shared `castHookToward()` so both
+      input methods stay in sync automatically.
+- [x] Verified by full code read-through rather than a live browser
+      test — the Browser preview pane was hidden/non-composited
+      client-side for this entire session (see the v15 note on this),
+      so Phaser's loop never ran long enough to click through a game
+      session. The new code is a thin wrapper reusing the already
+      hand-tested cast/catch/hit-detection path, so risk is low, but
+      worth an actual playtest before fully trusting it.
+
 ## Next up (pick based on what you want most)
+- [ ] Playtest the v16 spacebar auto-aim live (blocked this session by
+      the preview pane issue above)
 - [ ] Sync fish/sharks so all players share one pool instead of each
       having an independent copy
 - [ ] Smooth/interpolate remote boat movement between network updates

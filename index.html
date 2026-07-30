@@ -396,22 +396,17 @@ class MainScene extends Phaser.Scene {
     this.input.on('pointerdown', (pointer) => {
       if (this.gameOver || this.hookState !== 'idle') return;
       if (pointer.worldY < TOP_BORDER) return; // clicks in the HUD strip shouldn't cast the hook
-      const dx = pointer.worldX - this.boat.x;
-      const dy = pointer.worldY - this.boat.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > this.hookRange) {
-        // Beyond range — clamp the cast to the edge of the range circle
-        // in the direction clicked, rather than ignoring the click.
-        const scale = this.hookRange / dist;
-        this.hookTarget.x = this.boat.x + dx * scale;
-        this.hookTarget.y = this.boat.y + dy * scale;
-      } else {
-        this.hookTarget.x = pointer.worldX;
-        this.hookTarget.y = pointer.worldY;
-      }
-      this.hook.setPosition(this.boat.x, this.boat.y);
-      this.hook.setVisible(true);
-      this.hookState = 'out';
+      this.castHookToward(pointer.worldX, pointer.worldY);
+    });
+
+    // Spacebar — auto-aims at the nearest catchable thing in range
+    // (a swimming fish/shark, or another player's boat) instead of
+    // requiring a precise click. Does nothing if nothing's in range.
+    this.input.keyboard.on('keydown-SPACE', () => {
+      if (this.gameOver || this.hookState !== 'idle') return;
+      const target = this.findNearestEntityInRange();
+      if (!target) return;
+      this.castHookToward(target.x, target.y);
     });
 
     // Fish — each swims a fixed circle around its own spawn point,
@@ -700,6 +695,61 @@ class MainScene extends Phaser.Scene {
     this.hookRangeGraphics.clear();
     this.hookRangeGraphics.lineStyle(1, HOOK_RANGE_COLOR, HOOK_RANGE_ALPHA);
     this.hookRangeGraphics.strokeCircle(this.boat.x, this.boat.y, this.hookRange);
+  }
+
+  // Shared by both the click handler and the spacebar auto-aim: sends
+  // the hook out from the boat toward (targetX, targetY), clamped to
+  // the current hook range.
+  castHookToward(targetX, targetY) {
+    const dx = targetX - this.boat.x;
+    const dy = targetY - this.boat.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > this.hookRange) {
+      // Beyond range — clamp the cast to the edge of the range circle
+      // in that direction, rather than ignoring it.
+      const scale = this.hookRange / dist;
+      this.hookTarget.x = this.boat.x + dx * scale;
+      this.hookTarget.y = this.boat.y + dy * scale;
+    } else {
+      this.hookTarget.x = targetX;
+      this.hookTarget.y = targetY;
+    }
+    this.hook.setPosition(this.boat.x, this.boat.y);
+    this.hook.setVisible(true);
+    this.hookState = 'out';
+  }
+
+  // The closest swimming fish/shark or other player's (non-sunk) boat
+  // within hookRange, or null if nothing qualifies — used by the
+  // spacebar auto-aim.
+  findNearestEntityInRange() {
+    let nearest = null;
+    let nearestDistSq = this.hookRange * this.hookRange;
+
+    for (const fish of this.fish) {
+      if (fish.fishState !== 'swimming') continue;
+      const dx = fish.x - this.boat.x;
+      const dy = fish.y - this.boat.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= nearestDistSq) {
+        nearestDistSq = distSq;
+        nearest = { x: fish.x, y: fish.y };
+      }
+    }
+
+    for (const id in this.remoteBoats) {
+      const remote = this.remoteBoats[id];
+      if (!remote.data || remote.data.sunk) continue;
+      const dx = remote.sprite.x - this.boat.x;
+      const dy = remote.sprite.y - this.boat.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= nearestDistSq) {
+        nearestDistSq = distSq;
+        nearest = { x: remote.sprite.x, y: remote.sprite.y };
+      }
+    }
+
+    return nearest;
   }
 
   updateFish(delta) {

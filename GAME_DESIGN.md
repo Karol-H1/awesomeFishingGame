@@ -87,8 +87,14 @@ the boat contained.
   the boat just came from), the hook turns back the instant it hits
   the edge of the range circle, rather than being able to trail
   outside it.
-- Catches fish and sharks (see below). Damaging other players' boats
-  is not yet implemented.
+- Catches fish and sharks (see below), and can hit other players'
+  boats (see Battling below).
+- **Spacebar** casts too, but auto-aims: it targets whichever swimming
+  fish/shark or other player's (non-sunk) boat is nearest the player's
+  own boat, among only those already within hook range. If nothing
+  qualifies, pressing it does nothing. Both input methods share the
+  same underlying cast — spacebar just picks the target for you
+  instead of needing a precise click.
 
 ## Fish
 - Up to 10 fish swim in the lake at a time. Each fish is anchored to
@@ -238,6 +244,7 @@ the boat contained.
 | S   | Move down |
 | D   | Move right |
 | Click | Cast the hook toward the clicked point — catches fish, or hits another player's boat if it's closer |
+| Space | Cast the hook at the nearest catchable thing in range (fish/shark/player) automatically |
 | H   | Toggle hitbox debug view |
 | R   | Restart the game |
 
