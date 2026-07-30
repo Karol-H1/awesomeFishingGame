@@ -151,11 +151,47 @@ the boat contained.
 - Clicking anywhere in the top HUD strip (not just on a button) never
   casts the hook, so clicks on the shop can't accidentally do both.
 
+## Multiplayer
+- Every player who loads the game shares the same lake and sees every
+  other connected player's boat moving in real time — position,
+  rotation, and health, synced through Firebase Realtime Database (a
+  free hosted service; no server of our own to run or deploy).
+- Each browser generates a random player ID on first load and remembers
+  it in `localStorage`, so refreshing the page keeps controlling the
+  same boat rather than spawning a new one. Your own boat writes its
+  state (`x`, `y`, `rotation`, `health`, `sunk`) to `/players/{yourId}`
+  about 10 times/sec; every other player's boat is rendered directly
+  from that same shared path.
+- Remote boats are plain visuals for now (no physics body, can't be
+  bumped into) — a canoe sprite, a floating health bar identical in
+  style to your own, and a small "Player" label so testers can tell
+  remote boats apart from their own (which has no label). A remote
+  boat's texture swaps to the sunk sprite once it reports `sunk: true`,
+  the same way the local boat does.
+- If a player's tab closes or loses connection, Firebase's
+  `onDisconnect()` removes their entry automatically, and their boat
+  disappears for everyone else. Restarting your own boat (R, or a
+  fresh sink) cleans up and re-registers the same player ID rather than
+  leaving a duplicate behind.
+- Fish, sharks, hooks, and upgrades are **not** synced yet — every
+  player still has their own independent lake population and fish
+  count. This is deliberately just the "shared presence" foundation;
+  the next feature (battling) is what will make players actually
+  interact with each other's boats.
+- The Firebase project's Realtime Database is currently running in
+  test mode (open read/write, no auth) — fine for a small prototype
+  among friends, but worth locking down with real security rules
+  before sharing the game publicly.
+
 ## Out of scope for MVP (future ideas)
 - More upgrades beyond the four above.
 - Increasing cost per purchase (upgrades are currently a flat price
   every time, not scaling with how many times you've bought them).
-- Other players'/boats to damage with the hook (multiplayer or AI).
+- Syncing fish/sharks so all players compete for the same shared pool
+  instead of independent copies.
+- Smoothing/interpolating remote boat movement between network updates
+  instead of snapping directly to the latest reported position.
+- Damaging other players' boats with the hook (the battling feature).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
 - Sound effects (paddle splash, ambient lake sounds) and music.
@@ -194,6 +230,13 @@ boat has sunk (health hits 0) until the player restarts.
   (reserved for the HUD) — fixed pixel thickness regardless of window size.
 - Trade-off: sizing happens once at load. Resizing the browser window
   afterward doesn't live-resize the game; reloading the page does.
+
+## Backend
+- Firebase Realtime Database (free tier), used purely for player-state
+  sync — see Multiplayer above. Config lives inline in `index.html`;
+  the API key is a client identifier, not a secret, so it's fine to
+  ship in the page source, but the database's security rules should be
+  tightened before this goes out beyond a small group of friends.
 
 This doc is the source of truth for scope. When we add a feature, it
 should get a line here first so we don't lose track of what "done" means.

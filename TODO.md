@@ -124,9 +124,33 @@
       made the title screen impossible to observe until switched to
       a real served page.
 
+## Done (v14)
+- [x] Multiplayer (shared presence): Firebase Realtime Database syncs
+      every connected player's boat position/rotation/health live, no
+      server of our own to host. Random per-browser player ID
+      persisted in localStorage; own boat writes to `/players/{id}`
+      ~10x/sec, remote boats render from the same shared path (canoe
+      sprite + health bar + a "Player" label, no physics body yet).
+      onDisconnect() cleans up a player's entry if their tab closes.
+      Fish/sharks/hooks/upgrades stay local per-player for now — this
+      is the foundation the next feature (battling) builds on.
+- [x] Verified with two simultaneous browser tabs (forced distinct
+      player IDs via localStorage, since tabs on the same origin
+      normally share it) served over the local HTTP server, same
+      workaround as v13's file:// caching issue. Moving the boat in
+      one tab showed up live as a labeled remote boat with an updating
+      health bar in the other, in both directions.
+
 ## Next up (pick based on what you want most)
+- [ ] Battling: let the hook damage other players' boats now that
+      boats are visible to each other
+- [ ] Sync fish/sharks so all players share one pool instead of each
+      having an independent copy
+- [ ] Smooth/interpolate remote boat movement between network updates
+      instead of snapping to the latest position
+- [ ] Lock down the Firebase Realtime Database security rules (it's
+      currently in open test mode) before sharing outside a small group
 - [ ] More upgrades beyond the current four
-- [ ] Add other players'/boats the hook can damage
 - [ ] Replace procedural graphics with real hand-drawn/pixel art
 - [ ] Add a subtle bobbing/rocking animation to the canoe while idle
 - [ ] Add paddle-splash particle effect when moving

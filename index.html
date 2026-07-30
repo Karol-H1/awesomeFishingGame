@@ -34,6 +34,8 @@
 <div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; Click to cast the hook &nbsp;|&nbsp; H to toggle hitbox view &nbsp;|&nbsp; R to restart</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 // Sized to the actual browser window rather than a fixed 800x600, so the
 // game genuinely fills the screen instead of being scaled/letterboxed
@@ -131,6 +133,34 @@ const SHARK_STUN_TINT = 0xff6666;
 const SHARK_TEX_W = 48;
 const SHARK_TEX_H = 24;
 const SHARK_ATTACK_TEXT_OFFSET_Y = -28; // above the boat, mirroring the health bar below it
+
+// Multiplayer — Firebase Realtime Database, chosen so there's no server
+// to run ourselves: every client just reads/writes the same free-tier
+// hosted database. Each player writes their own boat's state under
+// /players/{id} and renders everyone else's from the same path. Fish,
+// sharks, hooks and upgrades stay local for now — this is just shared
+// presence (see boats moving together), the foundation for battling.
+const firebaseConfig = {
+  apiKey: "AIzaSyD_NbpwH8rek02FSCGB4oo_j9-s8yO49w8",
+  authDomain: "awesome-fishing-game.firebaseapp.com",
+  databaseURL: "https://awesome-fishing-game-default-rtdb.firebaseio.com",
+  projectId: "awesome-fishing-game",
+  storageBucket: "awesome-fishing-game.firebasestorage.app",
+  messagingSenderId: "802674699114",
+  appId: "1:802674699114:web:71f39c921d10d9b6175313"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// Persisted in localStorage so refreshing the page keeps controlling the
+// same boat instead of spawning a new ghost every reload.
+let playerId = localStorage.getItem('playerId');
+if (!playerId) {
+  playerId = 'p-' + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem('playerId', playerId);
+}
+
+const NETWORK_SYNC_INTERVAL_MS = 100; // ~10 updates/sec written to Firebase
 
 class TitleScene extends Phaser.Scene {
   constructor() {
@@ -411,6 +441,90 @@ class MainScene extends Phaser.Scene {
       stroke: '#000000',
       strokeThickness: 4
     }).setOrigin(0.5).setVisible(false);
+
+    this.setupMultiplayer();
+  }
+
+  // Writes this player's own boat state to Firebase and renders every
+  // other player's boat from the same shared /players path.
+  setupMultiplayer() {
+    this.playerRef = db.ref('players/' + playerId);
+    this.playerRef.onDisconnect().remove(); // clean up if the tab closes/loses connection
+    this.networkSyncAccum = 0;
+
+    this.remoteBoats = {}; // playerId -> { sprite, label, healthBarGraphics }
+
+    this.playersRef = db.ref('players');
+    this.playersRef.on('child_added', (snap) => {
+      if (snap.key === playerId) return; // that's us
+      this.addRemoteBoat(snap.key, snap.val());
+    });
+    this.playersRef.on('child_changed', (snap) => {
+      if (snap.key === playerId) return;
+      this.updateRemoteBoat(snap.key, snap.val());
+    });
+    this.playersRef.on('child_removed', (snap) => {
+      if (snap.key === playerId) return;
+      this.removeRemoteBoat(snap.key);
+    });
+
+    // Detach listeners and clear our own record when this scene instance
+    // ends (restart or otherwise) so they don't pile up across restarts.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.playersRef.off();
+      this.playerRef.onDisconnect().cancel();
+      this.playerRef.remove();
+    });
+  }
+
+  addRemoteBoat(id, data) {
+    if (this.remoteBoats[id]) return;
+    const sprite = this.add.image(data.x, data.y, data.sunk ? 'sunkTexture' : 'canoeTexture');
+    sprite.rotation = data.rotation || 0;
+    sprite.setDepth(DEPTH_BOAT);
+    const label = this.add.text(data.x, data.y - 20, 'Player', {
+      fontFamily: 'sans-serif',
+      fontSize: '10px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5).setDepth(DEPTH_BOAT + 1);
+    const healthBarGraphics = this.add.graphics();
+    this.remoteBoats[id] = { sprite, label, healthBarGraphics };
+    this.updateRemoteBoat(id, data);
+  }
+
+  updateRemoteBoat(id, data) {
+    const remote = this.remoteBoats[id];
+    if (!remote) { this.addRemoteBoat(id, data); return; }
+    remote.sprite.setTexture(data.sunk ? 'sunkTexture' : 'canoeTexture');
+    remote.sprite.setPosition(data.x, data.y);
+    remote.sprite.rotation = data.rotation || 0;
+    remote.label.setPosition(data.x, data.y - 20);
+
+    const g = remote.healthBarGraphics;
+    g.clear();
+    if (!data.sunk) {
+      const pct = (data.health != null ? data.health : MAX_HEALTH) / MAX_HEALTH;
+      const barX = data.x - HEALTH_BAR_WIDTH / 2;
+      const barY = data.y + HEALTH_BAR_OFFSET_Y;
+      g.fillStyle(0x2b2b2b, 0.7);
+      g.fillRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
+      const fillColor = pct > 0.5 ? 0x4caf50 : (pct > 0.25 ? 0xf0ad4e : 0xd9534f);
+      g.fillStyle(fillColor, 1);
+      g.fillRect(barX, barY, HEALTH_BAR_WIDTH * pct, HEALTH_BAR_HEIGHT);
+      g.lineStyle(1, 0x111111, 0.9);
+      g.strokeRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
+    }
+  }
+
+  removeRemoteBoat(id) {
+    const remote = this.remoteBoats[id];
+    if (!remote) return;
+    remote.sprite.destroy();
+    remote.label.destroy();
+    remote.healthBarGraphics.destroy();
+    delete this.remoteBoats[id];
   }
 
   hitRock() {
@@ -446,6 +560,12 @@ class MainScene extends Phaser.Scene {
     }
     this.refreshUpgradeButtons(); // gray out the shop — nothing's purchasable once sunk
     this.gameOverText.setVisible(true);
+
+    // update() (which normally sends our periodic position sync) bails
+    // out early once gameOver is set, so push the final sunk state once
+    // here — otherwise other players would see our last-known position
+    // frozen mid-lake without any indication we'd actually sunk.
+    if (this.playerRef) this.playerRef.update({ health: 0, sunk: true });
   }
 
   update(time, delta) {
@@ -506,6 +626,20 @@ class MainScene extends Phaser.Scene {
     this.updateFish(delta);
     this.updateHook(delta);
     this.refreshUpgradeButtons();
+
+    // Throttled outgoing sync — writing every frame would be far more
+    // Firebase traffic than needed for boats that move at a walking pace.
+    this.networkSyncAccum += delta;
+    if (this.networkSyncAccum >= NETWORK_SYNC_INTERVAL_MS) {
+      this.networkSyncAccum = 0;
+      this.playerRef.set({
+        x: Math.round(this.boat.x),
+        y: Math.round(this.boat.y),
+        rotation: this.boat.rotation,
+        health: this.boat.health,
+        sunk: false
+      });
+    }
   }
 
   drawHookRange() {
