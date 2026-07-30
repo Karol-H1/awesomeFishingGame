@@ -18,6 +18,7 @@
     height: 100vh;
   }
   #hint {
+    display: none; /* revealed once MainScene starts, see MainScene.create() */
     position: fixed;
     bottom: 10px;
     left: 50%;
@@ -131,6 +132,94 @@ const SHARK_TEX_W = 48;
 const SHARK_TEX_H = 24;
 const SHARK_ATTACK_TEXT_OFFSET_Y = -28; // above the boat, mirroring the health bar below it
 
+class TitleScene extends Phaser.Scene {
+  constructor() {
+    super('TitleScene');
+  }
+
+  create() {
+    // The HTML hint bar describes gameplay controls that don't apply
+    // yet — stay hidden until MainScene reveals it.
+    document.getElementById('hint').style.display = 'none';
+
+    const g = this.add.graphics();
+    g.fillStyle(0x3a7bd5, 1);
+    g.fillRect(0, 0, WIDTH, HEIGHT);
+    g.lineStyle(2, 0x5b9be0, 0.5);
+    for (let y = 20; y < HEIGHT; y += 30) {
+      g.beginPath();
+      g.moveTo(0, y);
+      for (let x = 0; x < WIDTH; x += 16) {
+        g.lineTo(x, y + Math.sin(x * 0.05) * 4);
+      }
+      g.strokePath();
+    }
+
+    this.add.text(WIDTH / 2, HEIGHT * 0.32, 'Awesome Fishing Game', {
+      fontFamily: 'sans-serif',
+      fontSize: '56px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+      stroke: '#1a3a5c',
+      strokeThickness: 8
+    }).setOrigin(0.5);
+
+    this.add.text(WIDTH / 2, HEIGHT * 0.32 + 50, 'Cast your hook. Catch fish. Watch out for sharks.', {
+      fontFamily: 'sans-serif',
+      fontSize: '18px',
+      color: '#eaf4ff',
+      stroke: '#000000',
+      strokeThickness: 3
+    }).setOrigin(0.5);
+
+    const btnW = 180;
+    const btnH = 60;
+    const btnX = WIDTH / 2 - btnW / 2;
+    const btnY = HEIGHT * 0.55;
+
+    const btnGraphics = this.add.graphics();
+    btnGraphics.fillStyle(0x1a1a1a, 0.6);
+    btnGraphics.fillRoundedRect(btnX, btnY, btnW, btnH, 10);
+    btnGraphics.lineStyle(2, 0xffffff, 0.8);
+    btnGraphics.strokeRoundedRect(btnX, btnY, btnW, btnH, 10);
+
+    const btnText = this.add.text(WIDTH / 2, btnY + btnH / 2, 'Play', {
+      fontFamily: 'sans-serif',
+      fontSize: '28px',
+      fontStyle: 'bold',
+      color: '#ffffff'
+    }).setOrigin(0.5);
+
+    // Gentle alpha pulse so the button reads as clickable. Tweening
+    // alpha rather than scale avoids Graphics objects scaling from
+    // their (0,0) origin instead of the button's visual center.
+    this.tweens.add({
+      targets: [btnGraphics, btnText],
+      alpha: { from: 1, to: 0.6 },
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    const zone = this.add.zone(WIDTH / 2, btnY + btnH / 2, btnW, btnH);
+    zone.setInteractive({ useHandCursor: true });
+    zone.on('pointerdown', () => this.startGame());
+
+    this.add.text(WIDTH / 2, btnY + btnH + 26, 'or press any key', {
+      fontFamily: 'sans-serif',
+      fontSize: '13px',
+      color: '#cfe3ff'
+    }).setOrigin(0.5).setAlpha(0.75);
+
+    this.input.keyboard.once('keydown', () => this.startGame());
+  }
+
+  startGame() {
+    this.scene.start('MainScene');
+  }
+}
+
 class MainScene extends Phaser.Scene {
   constructor() {
     super('MainScene');
@@ -150,6 +239,7 @@ class MainScene extends Phaser.Scene {
   }
 
   create() {
+    document.getElementById('hint').style.display = 'block';
     this.add.image(0, 0, 'lakeBackground').setOrigin(0, 0);
 
     // Spawn away from dead-center, since the rock sits in the middle
@@ -1050,7 +1140,7 @@ const config = {
       debug: false
     }
   },
-  scene: MainScene
+  scene: [TitleScene, MainScene]
 };
 
 new Phaser.Game(config);

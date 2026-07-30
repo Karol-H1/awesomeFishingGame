@@ -113,6 +113,17 @@
       already driving the tint, positioned relative to the boat each
       frame like the health bar.
 
+## Done (v13)
+- [x] Title screen (new `TitleScene`, runs before `MainScene`): game
+      title, tagline, pulsing "Play" button, click or press-any-key to
+      start. HTML hint bar hidden until gameplay actually begins.
+- [x] Verified by serving the file over a local HTTP server rather
+      than opening it directly — the file:// preview used throughout
+      this session turned out to be a permanently cached snapshot for
+      this path (state and scene never reset across "reloads"), which
+      made the title screen impossible to observe until switched to
+      a real served page.
+
 ## Next up (pick based on what you want most)
 - [ ] More upgrades beyond the current four
 - [ ] Add other players'/boats the hook can damage

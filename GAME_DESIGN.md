@@ -6,6 +6,17 @@ fisherman aboard, paddling freely around a lake. The screen itself is
 the boundary of the world — land rings the edge of the lake, keeping
 the boat contained.
 
+## Title screen
+- The game boots into a `TitleScene` rather than straight into
+  gameplay: a water-blue background with the same ripple styling as
+  the lake, the game title, a one-line tagline, and a pulsing "Play"
+  button.
+- Starting the game: click Play, or press any key. Either transitions
+  to `MainScene` (`this.scene.start('MainScene')`).
+- The HTML hint bar at the bottom of the screen (control reminders)
+  stays hidden until `MainScene` starts, since it describes gameplay
+  that doesn't apply yet on the title screen.
+
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.
 - Movement is free in any direction (not grid-based), at a constant speed.
