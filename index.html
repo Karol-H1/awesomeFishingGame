@@ -321,7 +321,9 @@ class TitleScene extends Phaser.Scene {
 
     const zone = this.add.zone(WIDTH / 2, btnY + btnH / 2, btnW, btnH);
     zone.setInteractive({ useHandCursor: true });
-    zone.on('pointerdown', () => this.startGame());
+    // Guarded so a click landing on the (much bigger) controls overlay
+    // behind it can't also start the game — see showControlsPanel().
+    zone.on('pointerdown', () => { if (!this.controlsOpen) this.startGame(); });
 
     this.add.text(WIDTH / 2, btnY + btnH + 26, 'or press any key', {
       fontFamily: 'sans-serif',
@@ -329,7 +331,135 @@ class TitleScene extends Phaser.Scene {
       color: '#cfe3ff'
     }).setOrigin(0.5).setAlpha(0.75);
 
-    this.input.keyboard.once('keydown', () => this.startGame());
+    // Not .once() — while the controls panel is open we want keydowns to
+    // do nothing (see showControlsPanel()), and the panel might get
+    // opened/closed more than once before the player actually starts.
+    this.input.keyboard.on('keydown', () => { if (!this.controlsOpen) this.startGame(); });
+
+    this.controlsOpen = false;
+    this.createControlsButton(btnY + btnH + 50);
+  }
+
+  // A small button under the Play button, so players on both desktop
+  // and mobile can check how to play before starting — the two have
+  // completely different controls (see showControlsPanel()).
+  createControlsButton(y) {
+    const btnW = 150;
+    const btnH = 40;
+    const btnX = WIDTH / 2 - btnW / 2;
+
+    const box = this.add.graphics();
+    box.fillStyle(0x1a1a1a, 0.45);
+    box.fillRoundedRect(btnX, y, btnW, btnH, 8);
+    box.lineStyle(1, 0xffffff, 0.6);
+    box.strokeRoundedRect(btnX, y, btnW, btnH, 8);
+
+    this.add.text(WIDTH / 2, y + btnH / 2, 'Controls', {
+      fontFamily: 'sans-serif',
+      fontSize: '17px',
+      color: '#ffffff'
+    }).setOrigin(0.5);
+
+    const zone = this.add.zone(WIDTH / 2, y + btnH / 2, btnW, btnH);
+    zone.setInteractive({ useHandCursor: true });
+    zone.on('pointerdown', () => this.showControlsPanel());
+  }
+
+  // A dismissable overlay listing the actual controls for this
+  // device — different for touch (joystick/hook button) vs. mouse and
+  // keyboard, since neither set of instructions is useful on the other.
+  showControlsPanel() {
+    if (this.controlsOpen) return;
+    this.controlsOpen = true;
+
+    const objects = [];
+    const track = (obj) => { objects.push(obj); return obj; };
+
+    // Covers the whole screen, both to dim the title behind the panel
+    // and so tapping anywhere outside the panel closes it too — not
+    // just the small Close button, which matters on a phone screen.
+    const dim = track(this.add.graphics().setDepth(100));
+    dim.fillStyle(0x000000, 0.75);
+    dim.fillRect(0, 0, WIDTH, HEIGHT);
+    const dimZone = track(this.add.zone(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT).setDepth(100));
+    dimZone.setInteractive();
+    dimZone.on('pointerdown', () => close());
+
+    const lines = IS_TOUCH_DEVICE ? [
+      'Joystick (bottom-left) — steer the boat',
+      'Hook button (bottom-right) — cast at the nearest fish, shark, or player',
+      "Hooking another player's boat damages them and steals fish",
+      'Buy upgrades with caught fish from the top bar',
+      'Tap Restart after sinking to play again'
+    ] : [
+      'WASD — steer the boat',
+      'Click — cast the hook toward the cursor',
+      'Space — cast at the nearest fish, shark, or player automatically',
+      "Hooking another player's boat damages them and steals fish",
+      'Buy upgrades with caught fish from the top-right bar',
+      'H — toggle hitbox debug view, R — restart'
+    ];
+
+    const panelW = Math.min(440, WIDTH - 60);
+    const panelH = Math.min(70 + lines.length * 34 + 70, HEIGHT - 40);
+    const panelX = WIDTH / 2 - panelW / 2;
+    const panelY = HEIGHT / 2 - panelH / 2;
+
+    const panel = track(this.add.graphics().setDepth(101));
+    panel.fillStyle(0x11324d, 0.97);
+    panel.fillRoundedRect(panelX, panelY, panelW, panelH, 14);
+    panel.lineStyle(2, 0xffffff, 0.7);
+    panel.strokeRoundedRect(panelX, panelY, panelW, panelH, 14);
+
+    // Consumes clicks so tapping inside the panel doesn't fall through
+    // to dimZone underneath and immediately close it — a no-op handler
+    // is enough since Phaser processes overlapping interactive objects
+    // independently rather than stopping at the first hit.
+    const panelZone = track(this.add.zone(WIDTH / 2, panelY + panelH / 2, panelW, panelH).setDepth(101));
+    panelZone.setInteractive();
+    panelZone.on('pointerdown', () => {});
+
+    track(this.add.text(WIDTH / 2, panelY + 30, 'How to Play', {
+      fontFamily: 'sans-serif',
+      fontSize: '24px',
+      fontStyle: 'bold',
+      color: '#ffffff'
+    }).setOrigin(0.5).setDepth(102));
+
+    lines.forEach((line, i) => {
+      track(this.add.text(WIDTH / 2, panelY + 62 + i * 34, line, {
+        fontFamily: 'sans-serif',
+        fontSize: '14px',
+        color: '#eaf4ff',
+        align: 'center',
+        wordWrap: { width: panelW - 50 }
+      }).setOrigin(0.5).setDepth(102));
+    });
+
+    const closeBtnW = 110, closeBtnH = 36;
+    const closeBtnY = panelY + panelH - closeBtnH - 16;
+
+    const closeBox = track(this.add.graphics().setDepth(102));
+    closeBox.fillStyle(0x1a1a1a, 0.8);
+    closeBox.fillRoundedRect(WIDTH / 2 - closeBtnW / 2, closeBtnY, closeBtnW, closeBtnH, 8);
+    closeBox.lineStyle(1, 0xffffff, 0.7);
+    closeBox.strokeRoundedRect(WIDTH / 2 - closeBtnW / 2, closeBtnY, closeBtnW, closeBtnH, 8);
+
+    track(this.add.text(WIDTH / 2, closeBtnY + closeBtnH / 2, 'Close', {
+      fontFamily: 'sans-serif',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#ffffff'
+    }).setOrigin(0.5).setDepth(103));
+
+    const closeZone = track(this.add.zone(WIDTH / 2, closeBtnY + closeBtnH / 2, closeBtnW, closeBtnH).setDepth(103));
+    closeZone.setInteractive({ useHandCursor: true });
+    closeZone.on('pointerdown', () => close());
+
+    const close = () => {
+      this.controlsOpen = false;
+      objects.forEach((o) => o.destroy());
+    };
   }
 
   startGame() {
@@ -356,7 +486,10 @@ class MainScene extends Phaser.Scene {
   }
 
   create() {
-    document.getElementById('hint').style.display = 'block';
+    // The hint bar lists WASD/click/H/R — all keyboard-or-mouse only, so
+    // it's both useless and in the way (it overlaps the lake on a short
+    // screen) for touch players, who have the joystick and hook button.
+    document.getElementById('hint').style.display = IS_TOUCH_DEVICE ? 'none' : 'block';
     this.add.image(0, 0, 'lakeBackground').setOrigin(0, 0);
 
     // Spawn away from dead-center, since the rock sits in the middle
@@ -576,6 +709,34 @@ class MainScene extends Phaser.Scene {
     this.setupMultiplayer();
   }
 
+  // Positions are synced as a fraction of the lake (0..1 on each axis)
+  // rather than as raw pixels, because every player's lake is sized to
+  // their own window — a phone's is far smaller than a desktop's. Sent
+  // as pixels, a phone player roaming their whole lake would show up
+  // squashed into the top-left corner of a desktop player's bigger one
+  // (and the desktop player would often sit outside the phone's lake
+  // entirely). As a fraction, "40% across, 60% down" means the same
+  // place in the lake for everyone, whatever size their screen is.
+  toLakeFraction(x, y) {
+    return {
+      nx: (x - WATER_LEFT) / LAKE_W,
+      ny: (y - WATER_TOP) / LAKE_H
+    };
+  }
+
+  // Inverse of toLakeFraction, into this client's own pixel space.
+  // Returns null for missing/garbage input rather than propagating NaN
+  // into sprite positions — a record written by an older build (pixels,
+  // no nx/ny) would otherwise place a boat at NaN and make it vanish
+  // confusingly. Such records get overwritten within a sync tick anyway.
+  fromLakeFraction(nx, ny) {
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
+    return {
+      x: WATER_LEFT + nx * LAKE_W,
+      y: WATER_TOP + ny * LAKE_H
+    };
+  }
+
   // Writes this player's own boat state to Firebase and renders every
   // other player's boat from the same shared /players path.
   setupMultiplayer() {
@@ -629,11 +790,13 @@ class MainScene extends Phaser.Scene {
 
   addRemoteBoat(id, data) {
     if (this.remoteBoats[id]) return;
-    const sprite = this.add.image(data.x, data.y, data.sunk ? 'sunkTexture' : 'canoeTexture');
+    const pos = this.fromLakeFraction(data.nx, data.ny);
+    if (!pos) return; // unusable record — the next sync tick will bring a good one
+    const sprite = this.add.image(pos.x, pos.y, data.sunk ? 'sunkTexture' : 'canoeTexture');
     sprite.setScale(UI_SCALE); // same local rendering scale we use for our own boat — a per-viewer choice, not synced
     sprite.rotation = data.rotation || 0;
     sprite.setDepth(DEPTH_BOAT);
-    const label = this.add.text(data.x, data.y - REMOTE_LABEL_OFFSET_Y, 'Player', {
+    const label = this.add.text(pos.x, pos.y - REMOTE_LABEL_OFFSET_Y, 'Player', {
       fontFamily: 'sans-serif',
       fontSize: Math.round(10 * UI_SCALE) + 'px',
       color: '#ffffff',
@@ -641,25 +804,37 @@ class MainScene extends Phaser.Scene {
       strokeThickness: 2
     }).setOrigin(0.5).setDepth(DEPTH_BOAT + 1);
     const healthBarGraphics = this.add.graphics();
-    this.remoteBoats[id] = { sprite, label, healthBarGraphics };
+
+    // Their hook — drawn exactly like our own (sprite plus a rope line
+    // back to the boat), so a cast is visible to everyone, not just the
+    // player making it.
+    const hookSprite = this.add.image(pos.x, pos.y, 'hookTexture');
+    hookSprite.setScale(UI_SCALE);
+    hookSprite.setDepth(DEPTH_BOAT);
+    hookSprite.setVisible(false);
+    const hookGraphics = this.add.graphics();
+
+    this.remoteBoats[id] = { sprite, label, healthBarGraphics, hookSprite, hookGraphics };
     this.updateRemoteBoat(id, data);
   }
 
   updateRemoteBoat(id, data) {
     const remote = this.remoteBoats[id];
     if (!remote) { this.addRemoteBoat(id, data); return; }
+    const pos = this.fromLakeFraction(data.nx, data.ny);
+    if (!pos) return; // leave the boat where it was rather than jumping it somewhere invalid
     remote.data = data; // last-known state, read by the hit-detection check in updateHook()
     remote.sprite.setTexture(data.sunk ? 'sunkTexture' : 'canoeTexture');
-    remote.sprite.setPosition(data.x, data.y);
+    remote.sprite.setPosition(pos.x, pos.y);
     remote.sprite.rotation = data.rotation || 0;
-    remote.label.setPosition(data.x, data.y - REMOTE_LABEL_OFFSET_Y);
+    remote.label.setPosition(pos.x, pos.y - REMOTE_LABEL_OFFSET_Y);
 
     const g = remote.healthBarGraphics;
     g.clear();
     if (!data.sunk) {
       const pct = (data.health != null ? data.health : MAX_HEALTH) / MAX_HEALTH;
-      const barX = data.x - HEALTH_BAR_WIDTH / 2;
-      const barY = data.y + HEALTH_BAR_OFFSET_Y;
+      const barX = pos.x - HEALTH_BAR_WIDTH / 2;
+      const barY = pos.y + HEALTH_BAR_OFFSET_Y;
       g.fillStyle(0x2b2b2b, 0.7);
       g.fillRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
       const fillColor = pct > 0.5 ? 0x4caf50 : (pct > 0.25 ? 0xf0ad4e : 0xd9534f);
@@ -667,6 +842,17 @@ class MainScene extends Phaser.Scene {
       g.fillRect(barX, barY, HEALTH_BAR_WIDTH * pct, HEALTH_BAR_HEIGHT);
       g.lineStyle(1, 0x111111, 0.9);
       g.strokeRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
+    }
+
+    const hookPos = data.hookOut ? this.fromLakeFraction(data.hookNx, data.hookNy) : null;
+    remote.hookGraphics.clear();
+    if (hookPos && !data.sunk) {
+      remote.hookSprite.setPosition(hookPos.x, hookPos.y);
+      remote.hookSprite.setVisible(true);
+      remote.hookGraphics.lineStyle(2, 0x3a2a1a, 0.8);
+      remote.hookGraphics.lineBetween(pos.x, pos.y, hookPos.x, hookPos.y);
+    } else {
+      remote.hookSprite.setVisible(false);
     }
   }
 
@@ -676,6 +862,8 @@ class MainScene extends Phaser.Scene {
     remote.sprite.destroy();
     remote.label.destroy();
     remote.healthBarGraphics.destroy();
+    remote.hookSprite.destroy();
+    remote.hookGraphics.destroy();
     delete this.remoteBoats[id];
   }
 
@@ -719,7 +907,9 @@ class MainScene extends Phaser.Scene {
     // out early once gameOver is set, so push the final sunk state once
     // here — otherwise other players would see our last-known position
     // frozen mid-lake without any indication we'd actually sunk.
-    if (this.playerRef) this.playerRef.update({ health: 0, fishCount: this.fishCount, sunk: true });
+    // hookOut:false too, or a hook that was mid-flight when we sank
+    // would stay frozen on other players' screens forever.
+    if (this.playerRef) this.playerRef.update({ health: 0, fishCount: this.fishCount, sunk: true, hookOut: false });
   }
 
   update(time, delta) {
@@ -802,13 +992,23 @@ class MainScene extends Phaser.Scene {
     this.networkSyncAccum += delta;
     if (this.networkSyncAccum >= NETWORK_SYNC_INTERVAL_MS) {
       this.networkSyncAccum = 0;
+      const boatPos = this.toLakeFraction(this.boat.x, this.boat.y);
+      // Hook rides along in the same payload so other players can see it
+      // mid-cast, not just the boat it came from.
+      const hookOut = this.hookState !== 'idle';
+      const hookPos = hookOut
+        ? this.toLakeFraction(this.hook.x, this.hook.y)
+        : { nx: boatPos.nx, ny: boatPos.ny };
       this.playerRef.set({
-        x: Math.round(this.boat.x),
-        y: Math.round(this.boat.y),
+        nx: boatPos.nx,
+        ny: boatPos.ny,
         rotation: this.boat.rotation,
         health: this.boat.health,
         fishCount: this.fishCount,
-        sunk: false
+        sunk: false,
+        hookOut,
+        hookNx: hookPos.nx,
+        hookNy: hookPos.ny
       });
     }
   }

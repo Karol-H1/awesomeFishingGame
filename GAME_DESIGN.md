@@ -16,6 +16,15 @@ the boat contained.
 - The HTML hint bar at the bottom of the screen (control reminders)
   stays hidden until `MainScene` starts, since it describes gameplay
   that doesn't apply yet on the title screen.
+- A **Controls** button beneath Play opens a dismissable "How to Play"
+  overlay — tap anywhere outside the panel, or its Close button, to
+  dismiss. Its contents are picked per device (`IS_TOUCH_DEVICE`):
+  desktop sees WASD/Click/Space/H/R, touch sees the joystick and hook
+  button instead, since neither set of instructions is useful on the
+  other. While the panel is open, both the Play button and "press any
+  key to start" are disabled (`this.controlsOpen` guards both), so
+  reading the controls can't accidentally start the game out from
+  under the player.
 
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.
@@ -169,15 +178,42 @@ the boat contained.
 - Each browser generates a random player ID on first load and remembers
   it in `localStorage`, so refreshing the page keeps controlling the
   same boat rather than spawning a new one. Your own boat writes its
-  state (`x`, `y`, `rotation`, `health`, `sunk`) to `/players/{yourId}`
-  about 10 times/sec; every other player's boat is rendered directly
-  from that same shared path.
+  state (`nx`, `ny`, `rotation`, `health`, `fishCount`, `sunk`,
+  `hookOut`, `hookNx`, `hookNy`) to `/players/{yourId}` about 10
+  times/sec; every other player's boat is rendered directly from that
+  same shared path.
+- **Positions travel as a fraction of the lake (0..1 per axis), not as
+  pixels.** Each player's lake is sized to their own window, so a
+  phone's is far smaller than a desktop's — a phone lake might be
+  796x317 where a desktop's is 1180x750. Sent as raw pixels, a phone
+  player roaming their entire lake would appear squashed into the
+  top-left corner of a desktop player's larger one, and the desktop
+  player would frequently sit outside the phone's lake entirely and
+  vanish. Sent as a fraction, "40% across, 60% down" means the same
+  spot in the lake for everyone, whatever size their screen is. Each
+  client converts to and from its own pixel space on send/receive
+  (`toLakeFraction()` / `fromLakeFraction()`).
+- Trade-off of that approach: since lakes differ in *aspect ratio* too,
+  not just size, relative distances aren't perfectly identical between
+  a phone and a desktop player (something dead-centre reads the same to
+  both, but "two boat-lengths to the left" doesn't map exactly). The
+  alternative — one fixed logical world scaled to fit every screen —
+  would be exact, but reintroduces letterbox bars, which was
+  specifically rejected earlier (see Screen / world size).
 - Remote boats are plain visuals for now (no physics body, can't be
   bumped into) — a canoe sprite, a floating health bar identical in
   style to your own, and a small "Player" label so testers can tell
   remote boats apart from their own (which has no label). A remote
   boat's texture swaps to the sunk sprite once it reports `sunk: true`,
   the same way the local boat does.
+- **Hooks are synced too**: a cast in flight is drawn on every other
+  player's screen exactly as it is on the caster's — hook sprite plus
+  the rope line back to their boat — so you can see an opponent
+  reaching for a fish, or for you. A hook is hidden once its owner
+  reports `hookOut: false` or sinks (`sinkBoat()` explicitly clears
+  `hookOut`, or a hook caught mid-flight would hang frozen on other
+  screens forever). What's *on* the hook isn't synced yet — a remote
+  hook dragging a fish or shark home looks like a bare hook.
 - If a player's tab closes or loses connection, Firebase's
   `onDisconnect()` removes their entry automatically, and their boat
   disappears for everyone else. Restarting your own boat (R, or a
@@ -286,6 +322,11 @@ the boat contained.
   every time, not scaling with how many times you've bought them).
 - Syncing fish/sharks so all players compete for the same shared pool
   instead of independent copies.
+- Syncing what's *on* a remote hook (a caught fish/shark riding it home
+  currently shows as a bare hook to other players).
+- A single fixed logical world scaled to every screen, so relative
+  distances are identical for every player regardless of their screen's
+  aspect ratio (see the trade-off noted under Multiplayer).
 - Smoothing/interpolating remote boat movement between network updates
   instead of snapping directly to the latest reported position.
 - A more authoritative/anti-cheat-resistant battling model (currently
@@ -330,7 +371,10 @@ On a touch device, the joystick (bottom-left) and hook button
 touch controls above. Space and H have no touch equivalent (H is a
 debug convenience); R's job is covered instead by the Restart button
 that appears after sinking (see Sinking / game over above), which
-works by tap or click for anyone, not just touch devices.
+works by tap or click for anyone, not just touch devices. The HTML
+hint bar listing these keys is hidden entirely on touch devices, since
+every control it names is keyboard-or-mouse only and it otherwise
+overlaps the lake on a short screen.
 
 ## Screen / world size
 - Game resolution matches the actual browser window size at load time

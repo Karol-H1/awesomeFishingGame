@@ -283,10 +283,67 @@
       health/position, fish pool refreshed, message/button hidden
       again). No console errors.
 
+## Done (v20)
+- [x] Fixed cross-device position sync (reported from a phone: "on
+      mobile the player is restricted to the top left of the full lake
+      compared to desktop"). Root cause: each player's lake is sized to
+      their own window (a phone's ~796x317 vs a desktop's ~1180x750),
+      but positions were synced as **absolute pixels** — so a phone
+      player roaming their whole lake landed in the top-left corner of
+      a desktop player's bigger one, and a desktop player was usually
+      outside the phone's lake entirely and invisible. Positions now
+      travel as a fraction of the lake (0..1 per axis) via
+      `toLakeFraction()`/`fromLakeFraction()`, so "40% across, 60%
+      down" means the same place for everyone regardless of screen size.
+- [x] Hooks are now synced (`hookOut`/`hookNx`/`hookNy`): a cast in
+      flight renders on every other player's screen as hook sprite plus
+      rope line, same as the caster sees it. `sinkBoat()` explicitly
+      clears `hookOut` so a hook caught mid-flight doesn't hang frozen
+      on other screens forever. What's *on* the hook isn't synced —
+      a remote hook carrying a fish/shark still looks bare.
+- [x] Hint bar (WASD/click/H/R) hidden on touch devices — every control
+      it lists is keyboard-or-mouse only, and it overlapped the lake on
+      a short screen.
+- [x] Verified live with two clients that happened to have genuinely
+      different lake sizes (644x564 vs 796x317 — the phone-vs-desktop
+      case exactly). Caster's hook at local pixel y=533 published as
+      fraction 0.7908 and rendered on the other client at y=300, which
+      is exactly `WATER_TOP + 0.7908 * LAKE_H` for that client; boat
+      positions matched to the pixel the same way. Under the old
+      scheme y=533 would have drawn at y=533 on a lake ending at
+      y=366 — 167px below the water, invisible, which is the reported
+      bug. Also confirmed the write path carries the hook (8 sampled
+      syncs with `hookOut` true, tracking out and back), and confirmed
+      visually that a remote boat renders its rope and hook.
+
+## Done (v21)
+- [x] Added a "Controls" button beneath Play on the title screen, since
+      desktop and mobile players have completely different controls and
+      neither had any way to learn them beforehand. Opens a dismissable
+      "How to Play" overlay (tap outside the panel or its Close button
+      to dismiss) listing WASD/Click/Space/H/R on desktop, or the
+      joystick/hook button on touch (`IS_TOUCH_DEVICE`) — plus one line
+      each on battling and buying upgrades regardless of device.
+- [x] Both the Play button and "press any key to start" are now guarded
+      by `this.controlsOpen`, so a keypress or click while the panel is
+      open can't accidentally start the game out from under the player
+      reading it.
+- [x] Verified live on desktop: Controls button opens the panel with
+      correct desktop-specific text, wraps long lines without
+      overlapping neighbors, a keypress while open does nothing (still
+      on the panel), Close dismisses it cleanly back to the title
+      screen, and the game starts normally afterward via keypress. The
+      touch-specific text branch wasn't separately live-tested (same
+      constraint as v17/v18 — no genuine touch emulation here), but
+      reuses the identical, already-verified rendering path with just a
+      different string list, so risk is low.
+
 ## Next up (pick based on what you want most)
-- [ ] Get real-phone confirmation that v18's scale fix (and now v19's
-      restart button) actually look/work right in practice (this
-      session could only simulate window dimensions, not genuine touch)
+- [ ] Get real-phone confirmation that v18's scale fix, v19's restart
+      button, v20's cross-device sync + visible hooks, and v21's
+      Controls panel all work in practice (this session could only
+      simulate window dimensions and differing lake sizes, not genuine
+      touch)
 - [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
       touch device — neither has had a genuine touch-input playtest yet
 - [ ] Sync fish/sharks so all players share one pool instead of each
