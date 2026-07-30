@@ -16,6 +16,15 @@ the boat contained.
 - The HTML hint bar at the bottom of the screen (control reminders)
   stays hidden until `MainScene` starts, since it describes gameplay
   that doesn't apply yet on the title screen.
+- A **Controls** button beneath Play opens a dismissable "How to Play"
+  overlay — tap anywhere outside the panel, or its Close button, to
+  dismiss. Its contents are picked per device (`IS_TOUCH_DEVICE`):
+  desktop sees WASD/Click/Space/H/R, touch sees the joystick and hook
+  button instead, since neither set of instructions is useful on the
+  other. While the panel is open, both the Play button and "press any
+  key to start" are disabled (`this.controlsOpen` guards both), so
+  reading the controls can't accidentally start the game out from
+  under the player.
 
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.

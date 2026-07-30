@@ -321,7 +321,9 @@ class TitleScene extends Phaser.Scene {
 
     const zone = this.add.zone(WIDTH / 2, btnY + btnH / 2, btnW, btnH);
     zone.setInteractive({ useHandCursor: true });
-    zone.on('pointerdown', () => this.startGame());
+    // Guarded so a click landing on the (much bigger) controls overlay
+    // behind it can't also start the game — see showControlsPanel().
+    zone.on('pointerdown', () => { if (!this.controlsOpen) this.startGame(); });
 
     this.add.text(WIDTH / 2, btnY + btnH + 26, 'or press any key', {
       fontFamily: 'sans-serif',
@@ -329,7 +331,135 @@ class TitleScene extends Phaser.Scene {
       color: '#cfe3ff'
     }).setOrigin(0.5).setAlpha(0.75);
 
-    this.input.keyboard.once('keydown', () => this.startGame());
+    // Not .once() — while the controls panel is open we want keydowns to
+    // do nothing (see showControlsPanel()), and the panel might get
+    // opened/closed more than once before the player actually starts.
+    this.input.keyboard.on('keydown', () => { if (!this.controlsOpen) this.startGame(); });
+
+    this.controlsOpen = false;
+    this.createControlsButton(btnY + btnH + 50);
+  }
+
+  // A small button under the Play button, so players on both desktop
+  // and mobile can check how to play before starting — the two have
+  // completely different controls (see showControlsPanel()).
+  createControlsButton(y) {
+    const btnW = 150;
+    const btnH = 40;
+    const btnX = WIDTH / 2 - btnW / 2;
+
+    const box = this.add.graphics();
+    box.fillStyle(0x1a1a1a, 0.45);
+    box.fillRoundedRect(btnX, y, btnW, btnH, 8);
+    box.lineStyle(1, 0xffffff, 0.6);
+    box.strokeRoundedRect(btnX, y, btnW, btnH, 8);
+
+    this.add.text(WIDTH / 2, y + btnH / 2, 'Controls', {
+      fontFamily: 'sans-serif',
+      fontSize: '17px',
+      color: '#ffffff'
+    }).setOrigin(0.5);
+
+    const zone = this.add.zone(WIDTH / 2, y + btnH / 2, btnW, btnH);
+    zone.setInteractive({ useHandCursor: true });
+    zone.on('pointerdown', () => this.showControlsPanel());
+  }
+
+  // A dismissable overlay listing the actual controls for this
+  // device — different for touch (joystick/hook button) vs. mouse and
+  // keyboard, since neither set of instructions is useful on the other.
+  showControlsPanel() {
+    if (this.controlsOpen) return;
+    this.controlsOpen = true;
+
+    const objects = [];
+    const track = (obj) => { objects.push(obj); return obj; };
+
+    // Covers the whole screen, both to dim the title behind the panel
+    // and so tapping anywhere outside the panel closes it too — not
+    // just the small Close button, which matters on a phone screen.
+    const dim = track(this.add.graphics().setDepth(100));
+    dim.fillStyle(0x000000, 0.75);
+    dim.fillRect(0, 0, WIDTH, HEIGHT);
+    const dimZone = track(this.add.zone(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT).setDepth(100));
+    dimZone.setInteractive();
+    dimZone.on('pointerdown', () => close());
+
+    const lines = IS_TOUCH_DEVICE ? [
+      'Joystick (bottom-left) — steer the boat',
+      'Hook button (bottom-right) — cast at the nearest fish, shark, or player',
+      "Hooking another player's boat damages them and steals fish",
+      'Buy upgrades with caught fish from the top bar',
+      'Tap Restart after sinking to play again'
+    ] : [
+      'WASD — steer the boat',
+      'Click — cast the hook toward the cursor',
+      'Space — cast at the nearest fish, shark, or player automatically',
+      "Hooking another player's boat damages them and steals fish",
+      'Buy upgrades with caught fish from the top-right bar',
+      'H — toggle hitbox debug view, R — restart'
+    ];
+
+    const panelW = Math.min(440, WIDTH - 60);
+    const panelH = Math.min(70 + lines.length * 34 + 70, HEIGHT - 40);
+    const panelX = WIDTH / 2 - panelW / 2;
+    const panelY = HEIGHT / 2 - panelH / 2;
+
+    const panel = track(this.add.graphics().setDepth(101));
+    panel.fillStyle(0x11324d, 0.97);
+    panel.fillRoundedRect(panelX, panelY, panelW, panelH, 14);
+    panel.lineStyle(2, 0xffffff, 0.7);
+    panel.strokeRoundedRect(panelX, panelY, panelW, panelH, 14);
+
+    // Consumes clicks so tapping inside the panel doesn't fall through
+    // to dimZone underneath and immediately close it — a no-op handler
+    // is enough since Phaser processes overlapping interactive objects
+    // independently rather than stopping at the first hit.
+    const panelZone = track(this.add.zone(WIDTH / 2, panelY + panelH / 2, panelW, panelH).setDepth(101));
+    panelZone.setInteractive();
+    panelZone.on('pointerdown', () => {});
+
+    track(this.add.text(WIDTH / 2, panelY + 30, 'How to Play', {
+      fontFamily: 'sans-serif',
+      fontSize: '24px',
+      fontStyle: 'bold',
+      color: '#ffffff'
+    }).setOrigin(0.5).setDepth(102));
+
+    lines.forEach((line, i) => {
+      track(this.add.text(WIDTH / 2, panelY + 62 + i * 34, line, {
+        fontFamily: 'sans-serif',
+        fontSize: '14px',
+        color: '#eaf4ff',
+        align: 'center',
+        wordWrap: { width: panelW - 50 }
+      }).setOrigin(0.5).setDepth(102));
+    });
+
+    const closeBtnW = 110, closeBtnH = 36;
+    const closeBtnY = panelY + panelH - closeBtnH - 16;
+
+    const closeBox = track(this.add.graphics().setDepth(102));
+    closeBox.fillStyle(0x1a1a1a, 0.8);
+    closeBox.fillRoundedRect(WIDTH / 2 - closeBtnW / 2, closeBtnY, closeBtnW, closeBtnH, 8);
+    closeBox.lineStyle(1, 0xffffff, 0.7);
+    closeBox.strokeRoundedRect(WIDTH / 2 - closeBtnW / 2, closeBtnY, closeBtnW, closeBtnH, 8);
+
+    track(this.add.text(WIDTH / 2, closeBtnY + closeBtnH / 2, 'Close', {
+      fontFamily: 'sans-serif',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#ffffff'
+    }).setOrigin(0.5).setDepth(103));
+
+    const closeZone = track(this.add.zone(WIDTH / 2, closeBtnY + closeBtnH / 2, closeBtnW, closeBtnH).setDepth(103));
+    closeZone.setInteractive({ useHandCursor: true });
+    closeZone.on('pointerdown', () => close());
+
+    const close = () => {
+      this.controlsOpen = false;
+      objects.forEach((o) => o.destroy());
+    };
   }
 
   startGame() {

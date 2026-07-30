@@ -316,11 +316,34 @@
       syncs with `hookOut` true, tracking out and back), and confirmed
       visually that a remote boat renders its rope and hook.
 
+## Done (v21)
+- [x] Added a "Controls" button beneath Play on the title screen, since
+      desktop and mobile players have completely different controls and
+      neither had any way to learn them beforehand. Opens a dismissable
+      "How to Play" overlay (tap outside the panel or its Close button
+      to dismiss) listing WASD/Click/Space/H/R on desktop, or the
+      joystick/hook button on touch (`IS_TOUCH_DEVICE`) — plus one line
+      each on battling and buying upgrades regardless of device.
+- [x] Both the Play button and "press any key to start" are now guarded
+      by `this.controlsOpen`, so a keypress or click while the panel is
+      open can't accidentally start the game out from under the player
+      reading it.
+- [x] Verified live on desktop: Controls button opens the panel with
+      correct desktop-specific text, wraps long lines without
+      overlapping neighbors, a keypress while open does nothing (still
+      on the panel), Close dismisses it cleanly back to the title
+      screen, and the game starts normally afterward via keypress. The
+      touch-specific text branch wasn't separately live-tested (same
+      constraint as v17/v18 — no genuine touch emulation here), but
+      reuses the identical, already-verified rendering path with just a
+      different string list, so risk is low.
+
 ## Next up (pick based on what you want most)
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
-      button, and v20's cross-device sync + visible hooks all work in
-      practice (this session could only simulate window dimensions and
-      differing lake sizes, not genuine touch)
+      button, v20's cross-device sync + visible hooks, and v21's
+      Controls panel all work in practice (this session could only
+      simulate window dimensions and differing lake sizes, not genuine
+      touch)
 - [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
       touch device — neither has had a genuine touch-input playtest yet
 - [ ] Sync fish/sharks so all players share one pool instead of each
