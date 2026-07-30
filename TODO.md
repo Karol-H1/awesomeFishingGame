@@ -269,10 +269,24 @@
       byte the original constants), so this shouldn't have touched the
       desktop experience at all.
 
+## Done (v19)
+- [x] Restart button: appears (and only responds to clicks/taps once
+      actually game over) beneath the "Your boat sank!" message,
+      alongside the existing R key — added because mobile players have
+      no keyboard and couldn't restart at all after sinking. Works for
+      everyone (mouse click or touch tap), not touch-gated like the
+      joystick/hook button, since it's a plain convenience rather than
+      a replacement for a desktop control.
+- [x] Verified live: forced the boat to sink via the debug scene
+      handle, confirmed the button renders in the right place beneath
+      the message, and clicking it correctly restarts the scene (fresh
+      health/position, fish pool refreshed, message/button hidden
+      again). No console errors.
+
 ## Next up (pick based on what you want most)
-- [ ] Get real-phone confirmation that v18's scale fix actually looks
-      right in practice (this session could only simulate the window
-      dimensions, not genuine touch, per the v17 note below)
+- [ ] Get real-phone confirmation that v18's scale fix (and now v19's
+      restart button) actually look/work right in practice (this
+      session could only simulate window dimensions, not genuine touch)
 - [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
       touch device — neither has had a genuine touch-input playtest yet
 - [ ] Sync fish/sharks so all players share one pool instead of each

@@ -48,10 +48,14 @@ the boat contained.
 - At 0 health, the boat "sinks": its texture swaps so the hull
   disappears, leaving just the fisherman floating in a couple of
   ripples. Controls are disabled at this point.
-- A "Your boat sank! Press R to restart" message appears.
+- A "Your boat sank! Press R or tap below to restart" message appears,
+  along with a **Restart** button beneath it.
 - Pressing **R** restarts the scene from scratch (fresh health,
   position, and rock state). This works at any time, not just after
-  sinking, as a manual reset.
+  sinking, as a manual reset. The Restart button only appears (and
+  only responds to taps/clicks) once actually sunk — it exists mainly
+  for touch devices, since R has no touch equivalent, but works for
+  anyone.
 
 ## Hazards
 - A rock sits in the middle of the lake. Colliding with it costs the
@@ -315,6 +319,7 @@ the boat contained.
 | Space | Cast the hook at the nearest catchable thing in range (fish/shark/player) automatically |
 | H   | Toggle hitbox debug view |
 | R   | Restart the game |
+| Restart button | Same as R — click/tap it after sinking to restart |
 
 Diagonal movement (e.g. W+D) is supported and normalized so diagonal
 speed matches straight-line speed. Controls are disabled once the
@@ -322,9 +327,10 @@ boat has sunk (health hits 0) until the player restarts.
 
 On a touch device, the joystick (bottom-left) and hook button
 (bottom-right) replace WASD and Click respectively — see Mobile /
-touch controls above. Space/H/R have no touch equivalent (H and R are
-debug/reset conveniences; nothing currently replaces manually
-restarting on touch beyond reloading the page).
+touch controls above. Space and H have no touch equivalent (H is a
+debug convenience); R's job is covered instead by the Restart button
+that appears after sinking (see Sinking / game over above), which
+works by tap or click for anyone, not just touch devices.
 
 ## Screen / world size
 - Game resolution matches the actual browser window size at load time

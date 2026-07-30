@@ -536,7 +536,7 @@ class MainScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-R', () => {
       this.scene.restart();
     });
-    this.gameOverText = this.add.text(WIDTH / 2, HEIGHT / 2, 'Your boat sank!\nPress R to restart', {
+    this.gameOverText = this.add.text(WIDTH / 2, HEIGHT / 2, 'Your boat sank!\nPress R or tap below to restart', {
       fontFamily: 'sans-serif',
       fontSize: '28px',
       color: '#ffffff',
@@ -544,6 +544,34 @@ class MainScene extends Phaser.Scene {
       stroke: '#000000',
       strokeThickness: 4
     }).setOrigin(0.5).setVisible(false);
+
+    // Restart button — R has no touch equivalent, so this is how
+    // mobile players (or anyone else) restart after sinking. Only
+    // shown/interactive once actually game over (see sinkBoat()).
+    const restartBtnW = Math.round(160 * UI_SCALE);
+    const restartBtnH = Math.round(50 * UI_SCALE);
+    const restartBtnX = WIDTH / 2 - restartBtnW / 2;
+    const restartBtnY = HEIGHT / 2 + Math.round(40 * UI_SCALE);
+
+    this.restartButtonBox = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setVisible(false);
+    this.restartButtonBox.fillStyle(0x1a1a1a, 0.75);
+    this.restartButtonBox.fillRoundedRect(restartBtnX, restartBtnY, restartBtnW, restartBtnH, 10);
+    this.restartButtonBox.lineStyle(2, 0xffffff, 0.8);
+    this.restartButtonBox.strokeRoundedRect(restartBtnX, restartBtnY, restartBtnW, restartBtnH, 10);
+
+    this.restartButtonText = this.add.text(WIDTH / 2, restartBtnY + restartBtnH / 2, 'Restart', {
+      fontFamily: 'sans-serif',
+      fontSize: Math.round(22 * UI_SCALE) + 'px',
+      fontStyle: 'bold',
+      color: '#ffffff'
+    }).setOrigin(0.5).setDepth(DEPTH_TOUCH_UI).setVisible(false);
+
+    const restartZone = this.add.zone(WIDTH / 2, restartBtnY + restartBtnH / 2, restartBtnW, restartBtnH);
+    restartZone.setInteractive({ useHandCursor: true });
+    restartZone.on('pointerdown', () => {
+      if (!this.gameOver) return;
+      this.scene.restart();
+    });
 
     this.setupMultiplayer();
   }
@@ -684,6 +712,8 @@ class MainScene extends Phaser.Scene {
     }
     this.refreshUpgradeButtons(); // gray out the shop — nothing's purchasable once sunk
     this.gameOverText.setVisible(true);
+    this.restartButtonBox.setVisible(true);
+    this.restartButtonText.setVisible(true);
 
     // update() (which normally sends our periodic position sync) bails
     // out early once gameOver is set, so push the final sunk state once
