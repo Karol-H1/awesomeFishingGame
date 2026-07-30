@@ -214,6 +214,39 @@ the boat contained.
 - If the victim is offline when hit, the message just waits in their
   inbox and gets applied automatically next time they reconnect.
 
+## Mobile / touch controls
+- Detected once at load (`IS_TOUCH_DEVICE`, based on
+  `navigator.maxTouchPoints`/`ontouchstart`) — a touch device gets a
+  virtual joystick and a hook button in place of WASD and click-to-aim;
+  a mouse/desktop browser sees neither and plays exactly as before.
+- **Joystick** (bottom-left): a translucent base ring plus a stick that
+  follows the drag, clamped to the base's radius. Only provides a
+  *direction*, the same way WASD does — dragging further doesn't move
+  the boat any faster, it's not an analog throttle. A small deadzone
+  near the center avoids jitter from an almost-still thumb. Supports
+  one active touch at a time; a second finger on the joystick's own
+  base is ignored (tracked by that first touch's pointer id) until the
+  first lets go.
+- **Hook button** (bottom-right): casts using the same nearest-thing-
+  in-range auto-aim as the spacebar (see Hook above) — there's no
+  precise "point and click" equivalent on a touchscreen, so the button
+  just fishes at whatever's closest, fish/shark/other-player boat
+  alike. Does nothing if nothing's in range.
+- Both are real Phaser objects drawn on the canvas at a fixed screen
+  position (same convention as the rest of the HUD), not HTML/CSS
+  elements, and support simultaneous multi-touch (joystick held down
+  while tapping the hook button) via `activePointers: 3` in the Phaser
+  config.
+- **Landscape only**: a full-screen "please rotate your device"
+  overlay blocks play in portrait, shown via a CSS media query that
+  only matches touch-primary devices (`hover: none` and
+  `pointer: coarse`), so a narrow desktop browser window never
+  triggers it. Since WIDTH/HEIGHT are captured once at load (see
+  Screen / world size below) and a phone will almost always load the
+  page in portrait first, the page reloads itself the moment the
+  device is actually rotated to landscape, rather than trying to
+  live-resize the already-running game with the wrong dimensions.
+
 ## Out of scope for MVP (future ideas)
 - More upgrades beyond the four above.
 - Increasing cost per purchase (upgrades are currently a flat price
@@ -224,6 +257,12 @@ the boat contained.
   instead of snapping directly to the latest reported position.
 - A more authoritative/anti-cheat-resistant battling model (currently
   trusts the attacker's client to report an honest steal amount).
+- Live-resizing/re-orienting an already-running game instead of
+  reloading (see Mobile / touch controls above).
+- Bigger/repositionable touch targets for the upgrade shop specifically
+  (currently unchanged from desktop — they're already comfortably
+  above typical minimum touch-target sizes, but haven't been tuned for
+  a small phone screen specifically).
 - Obstacles on the lake (rocks, other boats, lily pads).
 - Day/night cycle or weather affecting water appearance.
 - Sound effects (paddle splash, ambient lake sounds) and music.
@@ -252,6 +291,12 @@ Diagonal movement (e.g. W+D) is supported and normalized so diagonal
 speed matches straight-line speed. Controls are disabled once the
 boat has sunk (health hits 0) until the player restarts.
 
+On a touch device, the joystick (bottom-left) and hook button
+(bottom-right) replace WASD and Click respectively — see Mobile /
+touch controls above. Space/H/R have no touch equivalent (H and R are
+debug/reset conveniences; nothing currently replaces manually
+restarting on touch beyond reloading the page).
+
 ## Screen / world size
 - Game resolution matches the actual browser window size at load time
   (`window.innerWidth`/`innerHeight`), not a fixed canvas. It genuinely
@@ -262,7 +307,11 @@ boat has sunk (health hits 0) until the player restarts.
 - Land border thickness: 50px on left/right/bottom, 100px on top
   (reserved for the HUD) — fixed pixel thickness regardless of window size.
 - Trade-off: sizing happens once at load. Resizing the browser window
-  afterward doesn't live-resize the game; reloading the page does.
+  afterward doesn't live-resize the game; reloading the page does. On
+  a touch device that loaded in portrait, rotating to landscape
+  triggers exactly that reload automatically (see Mobile / touch
+  controls above) so this trade-off doesn't leave the game stuck at
+  the wrong shape.
 
 ## Backend
 - Firebase Realtime Database (free tier), used purely for player-state

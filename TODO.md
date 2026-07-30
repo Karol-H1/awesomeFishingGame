@@ -192,9 +192,47 @@
       hand-tested cast/catch/hit-detection path, so risk is low, but
       worth an actual playtest before fully trusting it.
 
+## Done (v17)
+- [x] Mobile support: a touch device (`IS_TOUCH_DEVICE`, detected via
+      `navigator.maxTouchPoints`/`ontouchstart`) gets a virtual joystick
+      (bottom-left, direction only, not analog speed) and a hook button
+      (bottom-right, casts via the same nearest-thing-in-range auto-aim
+      as spacebar) instead of WASD/click. Both are Phaser objects drawn
+      on the canvas, not HTML overlays. Desktop/mouse is unaffected —
+      neither control exists there, and click-to-aim is now gated to
+      `!IS_TOUCH_DEVICE` specifically so a stray tap while dragging the
+      joystick can't also fire a cast.
+- [x] Landscape-only: a full-screen "please rotate your device" prompt
+      blocks portrait via a CSS media query scoped to touch-primary
+      devices (`hover: none` + `pointer: coarse`), so a narrow desktop
+      window is never affected. Since WIDTH/HEIGHT are only computed
+      once at load, and a phone will almost always open the page in
+      portrait first, rotating to landscape triggers a full page
+      reload (rather than trying to live-resize the running game) so
+      the world ends up the right shape.
+- [x] Added a `<meta viewport>` tag and `touch-action: none` so mobile
+      browsers don't pinch-zoom/scroll/pull-to-refresh during play.
+      `activePointers: 3` added to the Phaser config so the joystick
+      and hook button work as genuinely simultaneous touches.
+- [x] Verified what this environment could actually verify: the
+      desktop/mouse experience is unchanged (regression-tested live —
+      WASD, click-to-cast, upgrade buttons all still work); the new
+      joystick math (direction, magnitude clamping, deadzone, no
+      divide-by-zero at dead center) and the hook button's wiring
+      (no-op with nothing in range, casts correctly with something in
+      range) were verified directly via the debug scene handle; the
+      rotate-prompt overlay was confirmed to render and cover the
+      screen correctly. **Not verified**: an actual touchscreen device
+      or genuine touch/mobile emulation — this testing tool only
+      resizes the viewport, it doesn't set `navigator.maxTouchPoints`
+      or the touch media features, so `IS_TOUCH_DEVICE` and the
+      rotate-prompt media query itself could never actually be
+      triggered here. This needs a real phone (or real device-emulation
+      dev tools) test before fully trusting it.
+
 ## Next up (pick based on what you want most)
-- [ ] Playtest the v16 spacebar auto-aim live (blocked this session by
-      the preview pane issue above)
+- [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
+      touch device — neither has had a genuine touch-input playtest yet
 - [ ] Sync fish/sharks so all players share one pool instead of each
       having an independent copy
 - [ ] Smooth/interpolate remote boat movement between network updates

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Awesome Fishing Game</title>
 <style>
   html, body {
@@ -12,6 +13,7 @@
     overflow: hidden;
     background: #1a1a1a;
     font-family: sans-serif;
+    touch-action: none; /* no pinch-zoom/scroll/pull-to-refresh while playing */
   }
   #game-container {
     width: 100vw;
@@ -27,16 +29,53 @@
     font-size: 13px;
     opacity: 0.7;
   }
+  #rotate-prompt {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: #1a1a1a;
+    color: #eaf4ff;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 20px;
+    padding: 30px;
+    box-sizing: border-box;
+  }
+  /* Only touch-primary devices (no hover, coarse pointer) get blocked
+     here — a narrow desktop browser window should never trigger this. */
+  @media (orientation: portrait) and (hover: none) and (pointer: coarse) {
+    #rotate-prompt { display: flex; }
+  }
 </style>
 </head>
 <body>
 <div id="game-container"></div>
 <div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; Click to cast the hook &nbsp;|&nbsp; H to toggle hitbox view &nbsp;|&nbsp; R to restart</div>
+<div id="rotate-prompt">Please rotate your device to landscape to play.</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
+// Touch-primary devices get a virtual joystick + hook button instead of
+// WASD/click (see createTouchControls() in MainScene). Detected once,
+// at script load — matches the convention used for WIDTH/HEIGHT below.
+const IS_TOUCH_DEVICE = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+// WIDTH/HEIGHT below are captured once, at load. A touch device that
+// loads this page in portrait (the #rotate-prompt overlay is covering
+// everything in that case, see the <style> block) would otherwise lock
+// in the wrong, portrait-shaped dimensions — so instead of trying to
+// live-resize the running game, just reload once it's actually rotated
+// to landscape, so this whole script re-runs with the right numbers.
+if (IS_TOUCH_DEVICE && window.innerHeight > window.innerWidth) {
+  window.addEventListener('resize', () => {
+    if (window.innerHeight <= window.innerWidth) location.reload();
+  });
+}
+
 // Sized to the actual browser window rather than a fixed 800x600, so the
 // game genuinely fills the screen instead of being scaled/letterboxed
 // into it. Everything else in this file (lake texture, physics bounds,
@@ -59,6 +98,7 @@ const WATER_BOTTOM = HEIGHT - BORDER;
 // Render depth — fish swim underneath the boat rather than on top of it.
 const DEPTH_FISH = 1;
 const DEPTH_BOAT = 2;
+const DEPTH_TOUCH_UI = 10; // joystick/hook button sit above everything, including HUD text
 
 // Canoe texture dimensions and the hitbox carved out of it.
 // The hitbox is trimmed slightly from the sharp bow/stern tips for a
@@ -104,6 +144,17 @@ const UPGRADE_BUTTON_W = 84;
 const UPGRADE_BUTTON_H = 68;
 const UPGRADE_BUTTON_GAP = 8;
 const UPGRADE_ICON_SIZE = 28;
+
+// Touch controls — only created on IS_TOUCH_DEVICE (see
+// createTouchControls()). Joystick bottom-left replaces WASD; hook
+// button bottom-right replaces click-to-aim, using the same
+// nearest-thing-in-range auto-aim as the spacebar (see tryAutoAimCast()).
+const JOYSTICK_MARGIN = 110;      // distance from the bottom-left corner to the joystick's center
+const JOYSTICK_BASE_RADIUS = 55;
+const JOYSTICK_STICK_RADIUS = 26;
+const JOYSTICK_DEADZONE = 12;     // pixels of drag before movement kicks in, avoids jitter near center
+const HOOK_BUTTON_MARGIN = 100;   // distance from the bottom-right corner to the button's center
+const HOOK_BUTTON_RADIUS = 48;
 
 // Fish
 const LAKE_W = WATER_RIGHT - WATER_LEFT;
@@ -393,21 +444,24 @@ class MainScene extends Phaser.Scene {
     // each frame in update() since it has to track the boat's position.
     this.hookRangeGraphics = this.add.graphics();
 
-    this.input.on('pointerdown', (pointer) => {
-      if (this.gameOver || this.hookState !== 'idle') return;
-      if (pointer.worldY < TOP_BORDER) return; // clicks in the HUD strip shouldn't cast the hook
-      this.castHookToward(pointer.worldX, pointer.worldY);
-    });
+    // Click-to-aim is a mouse/desktop thing — on touch devices the hook
+    // button (see createTouchControls()) is the only way to cast, so a
+    // stray tap while dragging the joystick can't also fire a cast.
+    if (!IS_TOUCH_DEVICE) {
+      this.input.on('pointerdown', (pointer) => {
+        if (this.gameOver || this.hookState !== 'idle') return;
+        if (pointer.worldY < TOP_BORDER) return; // clicks in the HUD strip shouldn't cast the hook
+        this.castHookToward(pointer.worldX, pointer.worldY);
+      });
+    }
 
     // Spacebar — auto-aims at the nearest catchable thing in range
     // (a swimming fish/shark, or another player's boat) instead of
     // requiring a precise click. Does nothing if nothing's in range.
-    this.input.keyboard.on('keydown-SPACE', () => {
-      if (this.gameOver || this.hookState !== 'idle') return;
-      const target = this.findNearestEntityInRange();
-      if (!target) return;
-      this.castHookToward(target.x, target.y);
-    });
+    // Same auto-aim used by the touch hook button.
+    this.input.keyboard.on('keydown-SPACE', () => this.tryAutoAimCast());
+
+    if (IS_TOUCH_DEVICE) this.createTouchControls();
 
     // Fish — each swims a fixed circle around its own spawn point,
     // drawn as a dark translucent silhouette to read as "under the
@@ -638,6 +692,14 @@ class MainScene extends Phaser.Scene {
       if (this.keys.up.isDown) vy -= 1;
       if (this.keys.down.isDown) vy += 1;
 
+      // Joystick direction wins over WASD when it's actively being
+      // dragged — same "just a direction, always full speed" feel as
+      // WASD, not a variable/analog speed.
+      if (IS_TOUCH_DEVICE && (this.joystickVector.x !== 0 || this.joystickVector.y !== 0)) {
+        vx = this.joystickVector.x;
+        vy = this.joystickVector.y;
+      }
+
       if (vx !== 0 || vy !== 0) {
         const len = Math.sqrt(vx * vx + vy * vy);
         vx = (vx / len) * this.boatSpeed;
@@ -750,6 +812,96 @@ class MainScene extends Phaser.Scene {
     }
 
     return nearest;
+  }
+
+  // Casts at the nearest catchable thing in range, if there is one.
+  // Shared by the spacebar key and the touch hook button.
+  tryAutoAimCast() {
+    if (this.gameOver || this.hookState !== 'idle') return;
+    const target = this.findNearestEntityInRange();
+    if (!target) return;
+    this.castHookToward(target.x, target.y);
+  }
+
+  // Virtual joystick (bottom-left, drives this.joystickVector, read in
+  // update()) and hook button (bottom-right, casts via tryAutoAimCast())
+  // for touch devices — see IS_TOUCH_DEVICE. Both sit at a fixed screen
+  // position, same convention as the rest of the HUD.
+  createTouchControls() {
+    const jx = JOYSTICK_MARGIN;
+    const jy = HEIGHT - JOYSTICK_MARGIN;
+    this.joystickCenter = { x: jx, y: jy };
+    this.joystickVector = { x: 0, y: 0 }; // normalized -1..1, read by update()
+    this.joystickPointerId = null;
+
+    const joystickBase = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
+    joystickBase.fillStyle(0xffffff, 0.15);
+    joystickBase.fillCircle(jx, jy, JOYSTICK_BASE_RADIUS);
+    joystickBase.lineStyle(2, 0xffffff, 0.4);
+    joystickBase.strokeCircle(jx, jy, JOYSTICK_BASE_RADIUS);
+
+    this.joystickStick = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
+    this.drawJoystickStick(0, 0);
+
+    const joystickZone = this.add.zone(jx, jy, JOYSTICK_BASE_RADIUS * 2.4, JOYSTICK_BASE_RADIUS * 2.4);
+    joystickZone.setInteractive();
+    joystickZone.on('pointerdown', (pointer) => {
+      this.joystickPointerId = pointer.id;
+      this.updateJoystickFromPointer(pointer);
+    });
+
+    // Global, not zone-scoped — a drag can wander outside the zone's
+    // bounds once it's already active, and we still need to track it.
+    this.input.on('pointermove', (pointer) => {
+      if (pointer.id === this.joystickPointerId) this.updateJoystickFromPointer(pointer);
+    });
+    this.input.on('pointerup', (pointer) => {
+      if (pointer.id === this.joystickPointerId) {
+        this.joystickPointerId = null;
+        this.joystickVector.x = 0;
+        this.joystickVector.y = 0;
+        this.drawJoystickStick(0, 0);
+      }
+    });
+
+    const hx = WIDTH - HOOK_BUTTON_MARGIN;
+    const hy = HEIGHT - HOOK_BUTTON_MARGIN;
+    const hookButtonGraphics = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
+    hookButtonGraphics.fillStyle(0x1a1a1a, 0.5);
+    hookButtonGraphics.fillCircle(hx, hy, HOOK_BUTTON_RADIUS);
+    hookButtonGraphics.lineStyle(2, 0xffffff, 0.6);
+    hookButtonGraphics.strokeCircle(hx, hy, HOOK_BUTTON_RADIUS);
+    this.add.image(hx, hy, 'hookTexture').setScale(2.5).setDepth(DEPTH_TOUCH_UI + 1);
+
+    const hookZone = this.add.zone(hx, hy, HOOK_BUTTON_RADIUS * 2, HOOK_BUTTON_RADIUS * 2);
+    hookZone.setInteractive();
+    hookZone.on('pointerdown', () => this.tryAutoAimCast());
+  }
+
+  updateJoystickFromPointer(pointer) {
+    const dx = pointer.x - this.joystickCenter.x;
+    const dy = pointer.y - this.joystickCenter.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const clampedDist = Math.min(dist, JOYSTICK_BASE_RADIUS);
+
+    this.drawJoystickStick(
+      dist > 0 ? (dx / dist) * clampedDist : 0,
+      dist > 0 ? (dy / dist) * clampedDist : 0
+    );
+
+    if (dist < JOYSTICK_DEADZONE) {
+      this.joystickVector.x = 0;
+      this.joystickVector.y = 0;
+    } else {
+      this.joystickVector.x = dx / dist;
+      this.joystickVector.y = dy / dist;
+    }
+  }
+
+  drawJoystickStick(offsetX, offsetY) {
+    this.joystickStick.clear();
+    this.joystickStick.fillStyle(0xffffff, 0.5);
+    this.joystickStick.fillCircle(this.joystickCenter.x + offsetX, this.joystickCenter.y + offsetY, JOYSTICK_STICK_RADIUS);
   }
 
   updateFish(delta) {
@@ -1406,6 +1558,9 @@ const config = {
   backgroundColor: '#3a7bd5',
   width: WIDTH,
   height: HEIGHT,
+  input: {
+    activePointers: 3 // joystick + hook button need to work as simultaneous touches
+  },
   physics: {
     default: 'matter',
     matter: {
