@@ -109,22 +109,37 @@ bundler (e.g. Vite) to serve them.
   code — a restart just throws away the old scene and builds a new
   one from scratch.
 
-## Rock hazard
-- The rock is a **static** Matter body (`matter.add.image(...)` +
-  `setCircle()` + `setStatic(true)`) — it never moves, so it needs no
-  velocity or rotation handling, only a body to collide with.
-- Its hitbox is a circle (`setCircle(ROCK_RADIUS)`), a good, cheap fit
-  for a round rock — no need for a rotated body here since it never
-  turns.
+## Obstacles: rocks and driftwood
+- Both are **static** Matter bodies (`matter.add.image(...)` +
+  `setCircle()`/`setRectangle()` + `setStatic(true)`) — "static" here
+  means Matter never moves them under its own physics, not that their
+  on-screen position can't change (see driftwood below).
+- Rocks: a circular body (`setCircle(ROCK_RADIUS)`), a good cheap fit
+  since they never turn. `ROCK_POSITIONS` places 5 of them at fixed
+  lake fractions (see Lake background layering's fraction discussion,
+  or GAME_DESIGN.md's Multiplayer section for the full reasoning).
+- Driftwood: a rectangular body (`setRectangle(...)`), created once at
+  a placeholder position and then genuinely repositioned every frame
+  in `updateDriftwood()` via `setPosition()` — the standard Matter.js
+  technique for a "kinematic" obstacle: a body with infinite mass that
+  the *game* moves directly rather than the physics solver, but that
+  dynamic bodies (the boat) still collide with correctly at wherever
+  it currently is. Its position is computed from `Date.now()` (wall
+  clock), not elapsed scene time — see DRIFTWOOD_CONFIGS' comment and
+  GAME_DESIGN.md's Multiplayer section for why that's what keeps it
+  synced across every player without any network traffic.
 - We listen for `this.matter.world.on('collisionstart', ...)` and,
-  inside the pair list, check whether the boat's and rock's bodies are
-  both involved. `collisionstart` fires once when contact begins (not
-  every physics step of overlap, unlike Arcade's `collider` callback),
-  so it's naturally a good fit for "you just hit the rock" rather than
-  continuous damage.
-- Damage still has a cooldown (`HIT_COOLDOWN_MS`) as a safety net, in
-  case the boat jitters against the rock and re-triggers
-  `collisionstart` in quick succession.
+  inside the pair list, check whether the boat and *any* hazard body
+  (every rock's and every driftwood piece's body, collected into one
+  `Set` at creation) are both involved. `collisionstart` fires once
+  when contact begins (not every physics step of overlap, unlike
+  Arcade's `collider` callback), so it's naturally a good fit for "you
+  just hit something" rather than continuous damage.
+- Damage (`hitObstacle()`) still has a cooldown (`HIT_COOLDOWN_MS`) as
+  a safety net, in case the boat jitters against an obstacle and
+  re-triggers `collisionstart` in quick succession — shared across
+  every hazard type via a single `this.boat.lastHitTime` timestamp, so
+  bouncing from a rock straight into driftwood can't double-dip.
 
 ## Lake background layering
 `createLakeTexture()` builds the shoreline from the outside in:

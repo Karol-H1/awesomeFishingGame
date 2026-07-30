@@ -89,11 +89,36 @@ the boat contained.
   anyone.
 
 ## Hazards
-- A rock sits in the middle of the lake. Colliding with it costs the
-  boat 5% health, with a brief cooldown per hit so leaning on the rock
+- **5 rocks** are scattered across the lake (`ROCK_POSITIONS`), rather
+  than the single centered one from earlier versions. Colliding with
+  one costs the boat 5% health, with a brief cooldown per hit (shared
+  across every hazard, rocks and driftwood alike) so leaning on one
   doesn't drain health every single frame.
-- The boat now spawns off-center (bottom-left area of the lake) rather
-  than exactly at the rock's position.
+- The boat spawns off-center (bottom-left area of the lake) rather than
+  on top of any rock — `ROCK_POSITIONS` was chosen to leave that corner
+  clear.
+- **2 driftwood** pieces drift in a straight line across the lake and
+  wrap to the entering edge once they cross the opposite one (so
+  "reaching the edge and respawning on another edge" is really just
+  the same straight line, seamlessly continued) — one moves
+  horizontally, the other vertically, so their paths cross rather than
+  running parallel. Bumping one deals the same 5% damage as a rock,
+  same shared cooldown. Unlike rocks, driftwood isn't a real obstacle
+  in the sense of blocking movement by inertia — it's a **static**
+  Matter body (so a dynamic body like the boat still collides with and
+  is physically pushed out of it correctly) that gets manually
+  repositioned every frame rather than actually being simulated, since
+  its motion needs to be a deterministic function of time (see
+  Multiplayer below), not physics.
+- Rocks and driftwood are both **synced across every player for free,
+  with zero network traffic** — rocks because they're placed at fixed
+  *fractions* of the lake (like player/hook positions, see
+  Multiplayer) rather than fixed pixels or randomized per-client, so
+  every player's independent computation lands in the same relative
+  spot; driftwood the same way, but with its moving fraction computed
+  from wall-clock time (`Date.now()`) instead of a fixed constant — see
+  Multiplayer below for why that's what makes it synced rather than
+  each player seeing their own independent piece of driftwood.
 
 ## Player hitbox
 - The boat has a rectangular hitbox sized to the hull, running on
@@ -249,6 +274,26 @@ the boat contained.
   own independent lake population. Fish *count* is synced (see
   Battling below), purely so opponents know how much they stand to
   steal.
+- **Rocks and driftwood are synced too, but not through Firebase at
+  all** (see Hazards above for what they look like). Rocks are placed
+  at fixed lake *fractions* — the exact same `nx`/`ny` trick used for
+  player and hook positions above — so every player's independently
+  computed layout lands in the same relative spot without writing
+  anything to the database, since a rock that never moves has nothing
+  to keep in sync at runtime. Driftwood extends the same trick to
+  something moving: its position is a fraction that's a deterministic
+  function of `Date.now()` (wall-clock time) rather than a fixed
+  constant, or "time since this client's own scene started" (which
+  differs by whenever each player happened to load the page or last
+  restart). Every connected player's clock reads roughly the same real
+  moment, so every client computes the exact same position at the
+  exact same instant — sync "for free," no writes, no reads, no
+  latency to hide with interpolation. The trade-off: it only works
+  because driftwood's motion is simple and fully predictable (constant
+  speed, constant direction, no player input involved) — this
+  approach couldn't sync something whose path depends on what a player
+  does, the way boats and hooks do, which is exactly why those still
+  go through Firebase instead.
 - The Firebase project's Realtime Database is currently running in
   test mode (open read/write, no auth) — fine for a small prototype
   among friends, but worth locking down with real security rules
@@ -391,7 +436,8 @@ the boat contained.
   trusts the attacker's client to report an honest steal amount).
 - Live-resizing/re-orienting an already-running game instead of
   reloading (see Mobile / touch controls above).
-- Obstacles on the lake (rocks, other boats, lily pads).
+- More obstacle variety (moving rocks, lily pads, obstacles that push
+  the boat instead of just damaging it) or other boats as obstacles.
 - Day/night cycle or weather affecting water appearance.
 - Sound effects (paddle splash, ambient lake sounds) and music.
 - Camera/zoom, or a larger world with scrolling instead of a single screen.

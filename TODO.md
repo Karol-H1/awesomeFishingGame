@@ -448,6 +448,68 @@
       in any of this (typing/clicking only), so unlike v17–v23 there's
       no touch-emulation caveat on this feature specifically.
 
+## Done (v25)
+- [x] Replaced the single centered rock with 5 rocks scattered across
+      the lake (`ROCK_POSITIONS`) — still static Matter circle bodies,
+      still the same 5% damage on collision, just more of them and
+      spread out instead of one obstacle to memorize and avoid.
+- [x] Added 2 driftwood pieces (one drifting horizontally, one
+      vertically, so their paths cross) that move in a straight line
+      and wrap to the entering edge once they cross the opposite one —
+      "reach the edge and respawn on another edge" is really the same
+      straight line, seamlessly continued via modulo arithmetic on the
+      lake fraction. Same 5% damage as a rock on contact, same shared
+      cooldown (`this.boat.lastHitTime`, one timestamp for every hazard
+      type, so bouncing rock-to-driftwood can't double-dip).
+- [x] Renamed `hitRock()` to `hitObstacle()` and generalized the
+      collisionstart handler to check against a `Set` of every rock's
+      and every driftwood piece's body, rather than one hardcoded rock
+      reference — adding a future obstacle type just means adding its
+      bodies to that same set.
+- [x] Both are synced across every player **with zero network
+      traffic**, per the user's explicit "obstacles should be synced
+      for each player" ask: rocks via fixed lake *fractions* (the same
+      `nx`/`ny` trick already used for player/hook positions — every
+      client's independent computation lands in the same relative
+      spot since nothing ever changes), driftwood the same way but
+      with its moving fraction computed from `Date.now()` (wall-clock
+      time) instead of a fixed constant, so every connected player's
+      clock reads roughly the same real moment and lands on the exact
+      same position with no Firebase writes/reads and no interpolation
+      needed to hide latency. This only works because driftwood's
+      motion is fully predictable (constant speed/direction, no player
+      input) — deliberately different from how boats/hooks sync, which
+      genuinely do need Firebase since a player's own movement isn't
+      predictable to anyone else.
+- [x] Driftwood is a **static** Matter body (like the rocks) manually
+      repositioned every frame via `setPosition()` rather than actually
+      simulated — the standard Matter.js way to give a "kinematic"
+      obstacle real physical presence (the boat is still correctly
+      pushed out of it) without fighting the physics solver over
+      something whose motion needs to be a deterministic function of
+      time, not forces.
+- [x] Verified live: 5 rocks and both driftwood pieces render with
+      correct textures/orientations (confirmed via a temporary debug
+      handle that each driftwood body's bounding box and angle
+      correctly swap for the horizontal vs. vertical piece — this
+      caught and fixed a real bug during development, where rotating
+      the sprite *and* pre-swapping the body's rectangle dimensions
+      would have doubly-transformed the vertical piece's hitbox back
+      to sideways); confirmed driftwood's on-screen position matches
+      the `Date.now()`-based formula to within ~0.2px by computing it
+      independently and comparing; confirmed rock collision deals
+      exactly 5% damage and physically pushes the boat out (teleported
+      the boat onto a rock via the debug handle and read health/
+      position before and after); confirmed driftwood collision deals
+      the same 5% damage after the shared cooldown expired; confirmed
+      the same relative driftwood position (as a lake fraction) is
+      computed independently by two separate browser tabs at the same
+      wall-clock instant — one of the two initially looked wrong
+      because backgrounding a browser tab pauses its own render loop
+      in this testing tool (a known artifact from earlier sessions,
+      not a real bug — confirmed by re-fronting that tab and seeing it
+      immediately snap back in sync).
+
 ## Next up (pick based on what you want most)
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
       button, v20's cross-device sync + visible hooks, v21's Controls

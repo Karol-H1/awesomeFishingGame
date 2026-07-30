@@ -157,19 +157,55 @@ const HITBOX_H = Math.round(18 * UI_SCALE);
 // Health bar — drawn fresh each frame (not baked into a texture), so
 // scaling these is just changing draw-time numbers, no art risk.
 const MAX_HEALTH = 100;
-const DAMAGE_PERCENT = 5;      // health lost per rock collision
+const DAMAGE_PERCENT = 5;      // health lost per obstacle (rock or driftwood) collision
 const HIT_COOLDOWN_MS = 800;   // brief invulnerability after a hit, so one
-                                // bump against a rock doesn't melt health
+                                // bump against an obstacle doesn't melt health
                                 // every physics step while still touching it
 const HEALTH_BAR_WIDTH = HITBOX_W; // never exceeds the boat's own length
 const HEALTH_BAR_HEIGHT = Math.round(6 * UI_SCALE);
 const HEALTH_BAR_OFFSET_Y = Math.round(24 * UI_SCALE); // how far below the boat it floats
 
-// Rock — ROCK_RADIUS sizes the baked texture (left unscaled, same
-// reasoning as the canoe); the rock's Matter body and on-screen size
+// Rocks — ROCK_RADIUS sizes the baked texture (left unscaled, same
+// reasoning as the canoe); each rock's Matter body and on-screen size
 // are separately scaled where they're used, see createRockTexture()'s
 // caller in preload()/create().
 const ROCK_RADIUS = 20;
+
+// Scattered at fixed fractions of the lake (see toLakeFraction() under
+// Multiplayer) rather than fixed pixels or randomized per-client — the
+// same trick already used to sync player/hook positions across players
+// with differently-sized lakes, applied here so every player sees
+// rocks in the same relative spots without any network traffic at all
+// (they never move, so there's nothing to keep in sync at runtime).
+// Chosen to spread across the lake while staying clear of the boat's
+// spawn corner (bottom-left, see the spawnOffset boat placement below).
+const ROCK_POSITIONS = [
+  { nx: 0.50, ny: 0.50 },
+  { nx: 0.22, ny: 0.22 },
+  { nx: 0.78, ny: 0.22 },
+  { nx: 0.78, ny: 0.72 },
+  { nx: 0.35, ny: 0.68 }
+];
+
+// Driftwood — floats in a straight line across the lake and wraps to
+// the entering edge once it exits the opposite one. Its position is a
+// pure function of wall-clock time (Date.now()), not physics or "time
+// since this client's scene started" (which differs per player) — so
+// every connected player computes the exact same fraction-of-the-lake
+// position at the same real moment and it's synced for free, the same
+// zero-network-traffic trick as the static rocks above, just extended
+// to something moving. `axis` is which lake fraction sweeps 0→1 over
+// DRIFTWOOD_PERIOD_MS (wrapping via modulo — reaching 1 is the same
+// instant as re-entering at 0, i.e. "respawning on the opposite edge");
+// `cross` is the fixed fraction on the other axis; `phase` offsets the
+// two pieces so they don't move in lockstep.
+const DRIFTWOOD_PERIOD_MS = 22000;
+const DRIFTWOOD_CONFIGS = [
+  { axis: 'x', cross: 0.30, phase: 0 },
+  { axis: 'y', cross: 0.68, phase: 0.5 }
+];
+const DRIFTWOOD_LEN = 46;   // baked texture size, unscaled — see setScale(UI_SCALE) at creation
+const DRIFTWOOD_WIDTH = 16;
 
 // Hook
 const HOOK_SPEED = 300;      // starting px/sec, both casting out and returning — "increase hook speed" is an upgrade
@@ -558,6 +594,7 @@ class MainScene extends Phaser.Scene {
     this.createLakeTexture();
     this.createCanoeTexture();
     this.createRockTexture();
+    this.createDriftwoodTexture();
     this.createSunkTexture();
     this.createHookTexture();
     this.createFishTexture();
@@ -615,22 +652,62 @@ class MainScene extends Phaser.Scene {
     // this as real static wall bodies around the given rectangle.
     this.matter.world.setBounds(WATER_LEFT, WATER_TOP, LAKE_W, LAKE_H);
 
-    // A rock sitting in the middle of the lake. Static — it never
-    // moves — but still needs a physics body to collide with. A
-    // circular body suits a round rock better than a rectangle would.
-    this.rock = this.matter.add.image(WIDTH / 2, (WATER_TOP + WATER_BOTTOM) / 2, 'rockTexture');
-    this.rock.setScale(UI_SCALE); // baked art stays full-res, same reasoning as the boat above
-    this.rock.setCircle(ROCK_RADIUS * UI_SCALE); // physics body scaled to match the now-smaller visual
-    this.rock.setStatic(true);
+    // Rocks scattered across the lake (see ROCK_POSITIONS). Static —
+    // they never move — but still need a physics body to collide with.
+    // A circular body suits a round rock better than a rectangle would.
+    this.rocks = ROCK_POSITIONS.map(({ nx, ny }) => {
+      const pos = this.fromLakeFraction(nx, ny);
+      const rock = this.matter.add.image(pos.x, pos.y, 'rockTexture');
+      rock.setScale(UI_SCALE); // baked art stays full-res, same reasoning as the boat above
+      rock.setCircle(ROCK_RADIUS * UI_SCALE); // physics body scaled to match the now-smaller visual
+      rock.setStatic(true);
+      return rock;
+    });
 
-    // Matter fires 'collisionstart' once per new contact (not every
-    // frame of overlap like Arcade's collider), so this is a natural
-    // fit for "you just hit the rock" rather than continuous damage.
+    // Driftwood — see DRIFTWOOD_CONFIGS/updateDriftwood() for the
+    // deterministic wall-clock movement that keeps it synced across
+    // players for free. The Matter body is static (like the rocks
+    // above) but manually repositioned every frame instead of never
+    // moving — the standard Matter.js way to give a "kinematic"
+    // obstacle a real physics presence: dynamic bodies (the boat)
+    // still collide with it correctly wherever it currently is, but it
+    // isn't itself pushed or slowed by anything it hits.
+    this.driftwood = DRIFTWOOD_CONFIGS.map((driftConfig) => {
+      const sprite = this.matter.add.image(0, 0, 'driftwoodTexture');
+      sprite.setScale(UI_SCALE);
+      // Same rectangle for both — rotating a game object's body angle
+      // (see below) also rotates its Matter body in place, so building
+      // the body pre-rotated here as well would double up and leave
+      // the vertical piece's hitbox pointing the wrong way again.
+      sprite.setRectangle(DRIFTWOOD_LEN * UI_SCALE, DRIFTWOOD_WIDTH * UI_SCALE);
+      if (driftConfig.axis === 'y') {
+        // Texture is drawn lying flat (long edge horizontal); rotating
+        // a quarter turn makes both the visible log and its physics
+        // body (rotation stays in sync with the body's angle) point
+        // along its actual direction of travel instead of sideways.
+        sprite.setRotation(Math.PI / 2);
+      }
+      sprite.setStatic(true);
+      return { sprite, config: driftConfig };
+    });
+    this.updateDriftwood(); // position correctly before the first frame renders
+
+    // A rock or driftwood contact deals the same damage (see
+    // hitObstacle()), so every hazard body — moving or not — goes in
+    // one set rather than special-casing which kind was hit. Matter
+    // fires 'collisionstart' once per new contact (not every frame of
+    // overlap like Arcade's collider), a natural fit for "you just hit
+    // something" rather than continuous damage.
+    const hazardBodies = new Set([
+      ...this.rocks.map((r) => r.body),
+      ...this.driftwood.map((d) => d.sprite.body)
+    ]);
     this.matter.world.on('collisionstart', (event) => {
       for (const pair of event.pairs) {
         const involvesBoat = pair.bodyA === this.boat.body || pair.bodyB === this.boat.body;
-        const involvesRock = pair.bodyA === this.rock.body || pair.bodyB === this.rock.body;
-        if (involvesBoat && involvesRock) this.hitRock();
+        if (!involvesBoat) continue;
+        const other = pair.bodyA === this.boat.body ? pair.bodyB : pair.bodyA;
+        if (hazardBodies.has(other)) this.hitObstacle();
       }
     });
 
@@ -957,12 +1034,29 @@ class MainScene extends Phaser.Scene {
     delete this.remoteBoats[id];
   }
 
-  hitRock() {
+  hitObstacle() {
     if (this.gameOver) return;
     const now = this.time.now;
     if (now < this.boat.lastHitTime + HIT_COOLDOWN_MS) return; // still on cooldown
     this.boat.lastHitTime = now;
     this.applyDamage(DAMAGE_PERCENT);
+  }
+
+  // Moves each driftwood piece to its current wall-clock-time position
+  // (see DRIFTWOOD_CONFIGS above for why Date.now() rather than the
+  // scene's own elapsed time). setPosition() on a Matter game object
+  // moves the underlying body too, not just the sprite, so collision
+  // detection stays correct even though the body is static.
+  updateDriftwood() {
+    const now = Date.now();
+    for (const dw of this.driftwood) {
+      const cycle = (now + dw.config.phase * DRIFTWOOD_PERIOD_MS) % DRIFTWOOD_PERIOD_MS;
+      const t = cycle / DRIFTWOOD_PERIOD_MS; // 0..1 sweep, wrapping = "respawn on the opposite edge"
+      const nx = dw.config.axis === 'x' ? t : dw.config.cross;
+      const ny = dw.config.axis === 'y' ? t : dw.config.cross;
+      const pos = this.fromLakeFraction(nx, ny);
+      dw.sprite.setPosition(pos.x, pos.y);
+    }
   }
 
   applyDamage(percent) {
@@ -1075,6 +1169,7 @@ class MainScene extends Phaser.Scene {
     this.drawHookRange();
     this.updateFish(delta);
     this.updateHook(delta);
+    this.updateDriftwood();
     this.refreshUpgradeButtons();
 
     // Throttled outgoing sync — writing every frame would be far more
@@ -1921,6 +2016,32 @@ class MainScene extends Phaser.Scene {
     g.fillEllipse(cx + 4, cy - 6, 10, 7);
 
     g.generateTexture('rockTexture', size, size);
+    g.destroy();
+  }
+
+  // Drawn lying flat (long edge horizontal) — the vertical-moving
+  // driftwood piece rotates the sprite 90° at creation instead of this
+  // being drawn twice, see the DRIFTWOOD_CONFIGS loop in create().
+  createDriftwoodTexture() {
+    const w = DRIFTWOOD_LEN;
+    const h = DRIFTWOOD_WIDTH;
+    const g = this.add.graphics();
+
+    g.fillStyle(0x6b4423, 1);
+    g.lineStyle(1, 0x4a2e18, 1);
+    g.fillRoundedRect(0, 0, w, h, h / 2); // capsule shape reads as a log's rounded tips
+    g.strokeRoundedRect(0, 0, w, h, h / 2);
+
+    // Rings near each end suggest cut log faces; a couple of grain
+    // lines along the length for texture.
+    g.lineStyle(1.5, 0x4a2e18, 0.7);
+    g.strokeEllipse(h * 0.55, h / 2, h * 0.55, h * 0.85);
+    g.strokeEllipse(w - h * 0.55, h / 2, h * 0.55, h * 0.85);
+    g.lineStyle(1, 0x53311d, 0.5);
+    g.lineBetween(h * 0.9, h * 0.3, w - h * 0.9, h * 0.3);
+    g.lineBetween(h * 0.9, h * 0.7, w - h * 0.9, h * 0.7);
+
+    g.generateTexture('driftwoodTexture', w, h);
     g.destroy();
   }
 }
