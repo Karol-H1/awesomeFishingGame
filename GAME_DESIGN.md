@@ -246,6 +246,35 @@ the boat contained.
   page in portrait first, the page reloads itself the moment the
   device is actually rotated to landscape, rather than trying to
   live-resize the already-running game with the wrong dimensions.
+- **Scaling for small screens**: every fixed-pixel "size" constant
+  (border thickness, hitboxes, hook reach, buttons, joystick, font
+  sizes...) was originally tuned looking at a normal desktop browser
+  window. A phone in landscape is much shorter, so without any
+  correction those same fixed sizes eat a far bigger fraction of the
+  smaller screen — border/HUD crowd out the lake, joystick and buttons
+  read as oversized. `UI_SCALE` (computed once from `HEIGHT` against an
+  800px reference, capped at 1) scales all of those down together so a
+  short screen keeps the same *proportions* a normal desktop window
+  already has, rather than the same absolute pixel sizes. Capping at 1
+  means a normal-height desktop window is completely unaffected.
+- The baked pixel art itself (boat, rock, fish, shark, hook — anything
+  `generateTexture()`s a hand-drawn shape) is deliberately **not**
+  regenerated at a smaller resolution; several of those have hand-tuned
+  absolute offsets internally (e.g. the canoe hull's points) that would
+  distort if the drawing math were scaled but the offsets weren't. Instead
+  each sprite is displayed via `.setScale(UI_SCALE)`, which shrinks the
+  already-correct art uniformly with zero risk of warping it, and the
+  matching Matter physics body (hitbox rectangle, rock's collision
+  circle) is separately sized by the same factor so the (invisible)
+  collision area still lines up with the now-smaller sprite.
+- The one exception is the lake background itself (border/beach/grass,
+  baked once at load into a full-screen texture) — border thickness has
+  to actually change for a shorter screen to show more lake, not just
+  look smaller, so `BORDER`/`TOP_BORDER`/`BEACH` are scaled directly.
+  The pine-tree decoration drawn into that ring uses fixed pixel offsets
+  of its own (how far a tree reaches, its spacing) that had to be scaled
+  the same way, otherwise the trees would overflow past a thinner ring
+  into the beach at small sizes.
 
 ## Out of scope for MVP (future ideas)
 - More upgrades beyond the four above.

@@ -230,7 +230,49 @@
       triggered here. This needs a real phone (or real device-emulation
       dev tools) test before fully trusting it.
 
+## Done (v18)
+- [x] Fixed the v17 mobile layout looking oversized/constrained on a
+      real phone (reported directly from a phone screenshot: joystick
+      and hook button each ate roughly a third of the screen height,
+      border+HUD left only a thin strip of visible lake). Root cause:
+      every fixed-pixel size in the file (border thickness, buttons,
+      joystick, hitboxes, hook reach...) was tuned looking at a normal
+      desktop window, so on a much shorter phone-landscape screen the
+      same absolute sizes ate a far bigger fraction of it.
+- [x] Added `UI_SCALE` — computed once from `HEIGHT` against an 800px
+      reference, capped at 1 so a normal desktop window is completely
+      unaffected — and applied it to every spatial constant: border/
+      beach thickness, hitboxes, hook range/catch radii, upgrade
+      buttons and their internal icon/label/cost layout, the fish-count
+      HUD box, joystick and hook button sizing, and the boat's spawn
+      offset. Baked pixel art (boat/rock/fish/shark/hook textures) is
+      deliberately left at full resolution — several have hand-tuned
+      absolute offsets that would distort if scaled — and instead each
+      sprite is shown via `.setScale(UI_SCALE)`, with the matching
+      Matter physics body (hitbox, rock's collision circle) scaled by
+      the same factor separately so the invisible hitbox still lines up.
+      The lake background's pine-tree decoration needed its own fixed
+      offsets (reach, spacing) scaled the same way, since a thinner
+      border ring would otherwise make the trees overflow past it.
+- [x] Verified live: at a genuinely short window height (844x390,
+      matching a real phone's landscape resolution — this environment
+      can control window size even without genuine touch emulation,
+      and UI_SCALE only depends on height), border+HUD now occupy the
+      same ~19% of screen height as they do on a normal desktop window
+      (previously ~37% unscaled), movement/hook-casting still function
+      correctly at the smaller scale, and the joystick/hook button
+      (manually instantiated via the debug scene handle, since
+      IS_TOUCH_DEVICE can't be forced here) render at a proportional,
+      no-longer-dominating size. Border decoration (pine trees) checked
+      visually for overflow at this size — none found. Normal desktop
+      window height confirmed to produce UI_SCALE exactly 1 (byte-for-
+      byte the original constants), so this shouldn't have touched the
+      desktop experience at all.
+
 ## Next up (pick based on what you want most)
+- [ ] Get real-phone confirmation that v18's scale fix actually looks
+      right in practice (this session could only simulate the window
+      dimensions, not genuine touch, per the v17 note below)
 - [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
       touch device — neither has had a genuine touch-input playtest yet
 - [ ] Sync fish/sharks so all players share one pool instead of each
