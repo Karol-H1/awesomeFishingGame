@@ -43,6 +43,23 @@
     padding: 30px;
     box-sizing: border-box;
   }
+  #nickname-input {
+    display: none; /* shown only on TitleScene, see TitleScene create()/startGame() */
+    position: fixed;
+    transform: translateX(-50%);
+    text-align: center;
+    font-family: sans-serif;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    background: rgba(26, 26, 26, 0.55);
+    color: #ffffff;
+    outline: none;
+    box-sizing: border-box;
+    padding: 0 10px;
+  }
+  #nickname-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+  }
   /* Only touch-primary devices (no hover, coarse pointer) get blocked
      here — a narrow desktop browser window should never trigger this. */
   @media (orientation: portrait) and (hover: none) and (pointer: coarse) {
@@ -54,6 +71,7 @@
 <div id="game-container"></div>
 <div id="hint">WASD to paddle around the lake &nbsp;|&nbsp; Click to cast the hook &nbsp;|&nbsp; H to toggle hitbox view &nbsp;|&nbsp; R to restart</div>
 <div id="rotate-prompt">Please rotate your device to landscape to play.</div>
+<input id="nickname-input" type="text" placeholder="Nickname (optional)" maxlength="16" autocomplete="off" spellcheck="false">
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -242,7 +260,7 @@ if (!playerId) {
 }
 
 const NETWORK_SYNC_INTERVAL_MS = 100; // ~10 updates/sec written to Firebase
-const REMOTE_LABEL_OFFSET_Y = Math.round(20 * UI_SCALE); // "Player" label above a remote boat
+const REMOTE_LABEL_OFFSET_Y = Math.round(20 * UI_SCALE); // nickname (or "Player" if none set) label above a remote boat
 
 // Battling — hooking another player's boat (rather than a fish) damages
 // them and steals some of their catch. The attacker detects the hit
@@ -289,7 +307,8 @@ class TitleScene extends Phaser.Scene {
       strokeThickness: 8
     }).setOrigin(0.5);
 
-    this.add.text(WIDTH / 2, HEIGHT * 0.32 + 50, 'Cast your hook. Catch fish. Watch out for sharks.', {
+    const subtitleY = HEIGHT * 0.32 + 50;
+    this.add.text(WIDTH / 2, subtitleY, 'Cast your hook. Catch fish. Watch out for sharks.', {
       fontFamily: 'sans-serif',
       fontSize: '18px',
       color: '#eaf4ff',
@@ -297,10 +316,41 @@ class TitleScene extends Phaser.Scene {
       strokeThickness: 3
     }).setOrigin(0.5);
 
+    // A real HTML <input>, not a Phaser Text — Phaser has no built-in
+    // editable/typable text widget, so a positioned DOM element is the
+    // standard way to take text entry in a canvas game. Shown only here;
+    // startGame() hides it again and reads its value.
+    const nicknameInput = document.getElementById('nickname-input');
+    nicknameInput.value = localStorage.getItem('nickname') || '';
+    nicknameInput.style.display = 'block';
+    const nicknameGapAbove = Math.round(30 * TOUCH_UI_SCALE);
+    const nicknameH = Math.round(34 * TOUCH_UI_SCALE);
+    const nicknameGapBelow = Math.round(20 * TOUCH_UI_SCALE);
+    const nicknameY = subtitleY + nicknameGapAbove + nicknameH / 2;
+    nicknameInput.style.left = (WIDTH / 2) + 'px';
+    nicknameInput.style.top = (nicknameY - nicknameH / 2) + 'px';
+    nicknameInput.style.width = Math.min(240, WIDTH - 60) + 'px';
+    nicknameInput.style.height = nicknameH + 'px';
+    nicknameInput.style.fontSize = Math.round(15 * TOUCH_UI_SCALE) + 'px';
+    // Enter submits, same as clicking Play — convenient once you've just
+    // typed a name. The generic "any key starts the game" handler below
+    // explicitly skips this element so normal typing doesn't trigger it.
+    const nicknameEnterHandler = (e) => {
+      if (e.key === 'Enter' && !this.controlsOpen) { e.preventDefault(); this.startGame(); }
+    };
+    nicknameInput.addEventListener('keydown', nicknameEnterHandler);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      nicknameInput.removeEventListener('keydown', nicknameEnterHandler);
+    });
+
     const btnW = 180;
     const btnH = 60;
     const btnX = WIDTH / 2 - btnW / 2;
-    const btnY = HEIGHT * 0.55;
+    // Normally a fixed fraction of the screen, same as always — but on a
+    // short screen that fraction could land before the nickname input
+    // above it has room to breathe, so never let it get closer than the
+    // input actually needs.
+    const btnY = Math.max(HEIGHT * 0.55, nicknameY + nicknameH / 2 + nicknameGapBelow);
 
     const btnGraphics = this.add.graphics();
     btnGraphics.fillStyle(0x1a1a1a, 0.6);
@@ -342,7 +392,13 @@ class TitleScene extends Phaser.Scene {
     // Not .once() — while the controls panel is open we want keydowns to
     // do nothing (see showControlsPanel()), and the panel might get
     // opened/closed more than once before the player actually starts.
-    this.input.keyboard.on('keydown', () => { if (!this.controlsOpen) this.startGame(); });
+    // Also skipped while the nickname input is focused — Phaser's
+    // keyboard manager sees every keydown regardless of DOM focus, so
+    // without this, typing a single letter of a nickname would
+    // immediately start the game.
+    this.input.keyboard.on('keydown', () => {
+      if (!this.controlsOpen && document.activeElement !== nicknameInput) this.startGame();
+    });
 
     this.controlsOpen = false;
     this.createControlsButton(btnY + btnH + 50);
@@ -383,6 +439,12 @@ class TitleScene extends Phaser.Scene {
   showControlsPanel() {
     if (this.controlsOpen) return;
     this.controlsOpen = true;
+
+    // The nickname input is a real DOM element layered above the canvas
+    // (see create()), so without this it would float on top of the dim
+    // overlay below instead of being covered by it like everything else.
+    const nicknameInput = document.getElementById('nickname-input');
+    nicknameInput.style.visibility = 'hidden';
 
     const objects = [];
     const track = (obj) => { objects.push(obj); return obj; };
@@ -470,11 +532,17 @@ class TitleScene extends Phaser.Scene {
 
     const close = () => {
       this.controlsOpen = false;
+      nicknameInput.style.visibility = 'visible';
       objects.forEach((o) => o.destroy());
     };
   }
 
   startGame() {
+    const nicknameInput = document.getElementById('nickname-input');
+    const nickname = nicknameInput.value.trim().slice(0, 16);
+    localStorage.setItem('nickname', nickname);
+    nicknameInput.style.display = 'none';
+    nicknameInput.blur(); // drop focus so a leftover keydown listener elsewhere doesn't type into it
     this.scene.start('MainScene');
   }
 }
@@ -498,6 +566,12 @@ class MainScene extends Phaser.Scene {
   }
 
   create() {
+    // Read fresh from localStorage rather than trusting scene-start data,
+    // so this stays correct across a Phaser restart (R key, the Restart
+    // button) too — neither goes back through TitleScene, which is the
+    // only place that writes it.
+    this.nickname = localStorage.getItem('nickname') || '';
+
     // The hint bar lists WASD/click/H/R — all keyboard-or-mouse only, so
     // it's both useless and in the way (it overlaps the lake on a short
     // screen) for touch players, who have the joystick and hook button.
@@ -808,7 +882,10 @@ class MainScene extends Phaser.Scene {
     sprite.setScale(UI_SCALE); // same local rendering scale we use for our own boat — a per-viewer choice, not synced
     sprite.rotation = data.rotation || 0;
     sprite.setDepth(DEPTH_BOAT);
-    const label = this.add.text(pos.x, pos.y - REMOTE_LABEL_OFFSET_Y, 'Player', {
+    // Text set in updateRemoteBoat() below (called immediately after this),
+    // not here — it depends on data.nickname, which may arrive/change on
+    // any sync, not just this first one.
+    const label = this.add.text(pos.x, pos.y - REMOTE_LABEL_OFFSET_Y, '', {
       fontFamily: 'sans-serif',
       fontSize: Math.round(10 * UI_SCALE) + 'px',
       color: '#ffffff',
@@ -839,6 +916,7 @@ class MainScene extends Phaser.Scene {
     remote.sprite.setTexture(data.sunk ? 'sunkTexture' : 'canoeTexture');
     remote.sprite.setPosition(pos.x, pos.y);
     remote.sprite.rotation = data.rotation || 0;
+    remote.label.setText(data.nickname || 'Player');
     remote.label.setPosition(pos.x, pos.y - REMOTE_LABEL_OFFSET_Y);
 
     const g = remote.healthBarGraphics;
@@ -1020,7 +1098,8 @@ class MainScene extends Phaser.Scene {
         sunk: false,
         hookOut,
         hookNx: hookPos.nx,
-        hookNy: hookPos.ny
+        hookNy: hookPos.ny,
+        nickname: this.nickname
       });
     }
   }

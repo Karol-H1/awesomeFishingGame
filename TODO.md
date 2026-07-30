@@ -403,6 +403,51 @@
       390px-tall touch screen the row's bottom edge lands ~14px past
       `WATER_TOP`, confirming the spill and the need for the depth fix).
 
+## Done (v24)
+- [x] Nickname field on the title screen, between the tagline and Play.
+      A real HTML `<input>` positioned over the canvas (Phaser has no
+      built-in editable text widget) — optional, capped at 16 chars,
+      persisted in `localStorage` so it's remembered next visit. Other
+      players now see it as the label above your boat instead of the
+      generic "Player"; leaving it blank keeps the old "Player" label
+      exactly as before.
+- [x] `nickname` added to the periodic Firebase sync payload;
+      `MainScene` reads it from `localStorage` fresh on every `create()`
+      (not from Phaser scene-start data) so it survives a scene restart
+      (R key, the Restart button) too, since neither goes back through
+      `TitleScene` to re-read the input.
+- [x] Guarded the two ways typing could misfire: the page-wide "press
+      any key to start" handler now skips keydowns while the nickname
+      field has focus (Phaser's keyboard manager sees every keydown
+      regardless of DOM focus, so without this, typing a single letter
+      would launch the game); Enter in the field starts the game
+      directly, same as clicking Play.
+- [x] The Play button's position stays exactly the fixed screen-height
+      fraction it always was on any normal screen — it only shifts
+      lower if a short screen genuinely doesn't leave the input room
+      above it, same "don't move things unless actually necessary"
+      approach as v22's Controls-button clamp.
+- [x] The nickname input is a real DOM element layered above the canvas,
+      so it's explicitly hidden (via `visibility`, restored on close)
+      whenever the Controls overlay is open — otherwise it would float
+      on top of that overlay's dim background instead of being covered
+      by it like everything else on the title screen.
+- [x] Verified live with two real browser tabs (distinct `playerId`s,
+      same careful set-and-reload-one-tab-first methodology as earlier
+      multiplayer testing, since tabs on one origin share
+      `localStorage`): typed a nickname, confirmed typing didn't
+      trigger "press any key," confirmed the value survived a page
+      reload (pre-filled from `localStorage`), and confirmed each tab's
+      boat showed the *other* tab's live nickname as its label — one of
+      the two started from an old test record with no `nickname` field
+      at all, and correctly showed "Player" until its next sync brought
+      the real value, confirming the fallback path. Also drove
+      `showControlsPanel()`/its close handler directly via a temporary
+      debug handle to confirm the input hides and restores correctly
+      around the Controls overlay. No genuine touch input was involved
+      in any of this (typing/clicking only), so unlike v17–v23 there's
+      no touch-emulation caveat on this feature specifically.
+
 ## Next up (pick based on what you want most)
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
       button, v20's cross-device sync + visible hooks, v21's Controls

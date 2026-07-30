@@ -25,6 +25,28 @@ the boat contained.
   key to start" are disabled (`this.controlsOpen` guards both), so
   reading the controls can't accidentally start the game out from
   under the player.
+- A **nickname field** sits between the tagline and Play — a real HTML
+  `<input>` positioned over the canvas, not a Phaser element, since
+  Phaser has no built-in editable text widget. Optional; left blank, a
+  player just appears as "Player" to others (unchanged from before this
+  existed). Persisted in `localStorage` (pre-filled next visit),
+  trimmed and capped at 16 characters, and read fresh by `MainScene` on
+  every `create()` — including scene restarts (R key, the Restart
+  button), neither of which goes back through `TitleScene`.
+  - Pressing Enter in the field starts the game, same as clicking Play.
+  - The page-wide "press any key to start" handler explicitly ignores
+    keydowns while the field has focus (Phaser's keyboard manager sees
+    every keydown regardless of DOM focus), otherwise typing a single
+    letter would launch the game.
+  - Hidden (via `visibility`, not `display`, so its position doesn't
+    need recomputing) while the Controls overlay is open — being a real
+    DOM element layered above the canvas, it would otherwise float on
+    top of that overlay's dim background instead of being covered by it.
+  - The Play button's vertical position normally stays exactly the
+    fixed fraction of screen height it always was; it only shifts lower
+    if a short screen genuinely doesn't leave the input room to breathe
+    above it (same "only intervene when actually necessary" approach as
+    the Controls button's own on-screen clamp).
 
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.
@@ -180,9 +202,9 @@ the boat contained.
   it in `localStorage`, so refreshing the page keeps controlling the
   same boat rather than spawning a new one. Your own boat writes its
   state (`nx`, `ny`, `rotation`, `health`, `fishCount`, `sunk`,
-  `hookOut`, `hookNx`, `hookNy`) to `/players/{yourId}` about 10
-  times/sec; every other player's boat is rendered directly from that
-  same shared path.
+  `hookOut`, `hookNx`, `hookNy`, `nickname`) to `/players/{yourId}`
+  about 10 times/sec; every other player's boat is rendered directly
+  from that same shared path.
 - **Positions travel as a fraction of the lake (0..1 per axis), not as
   pixels.** Each player's lake is sized to their own window, so a
   phone's is far smaller than a desktop's — a phone lake might be
@@ -203,10 +225,13 @@ the boat contained.
   specifically rejected earlier (see Screen / world size).
 - Remote boats are plain visuals for now (no physics body, can't be
   bumped into) — a canoe sprite, a floating health bar identical in
-  style to your own, and a small "Player" label so testers can tell
-  remote boats apart from their own (which has no label). A remote
-  boat's texture swaps to the sunk sprite once it reports `sunk: true`,
-  the same way the local boat does.
+  style to your own, and a small label above it so players can tell
+  boats apart (your own has no label). The label shows the other
+  player's **nickname** (set on the title screen, see Title screen
+  above), or "Player" if they left it blank — including for a record
+  synced by an older build with no `nickname` field at all, which reads
+  the same as an empty one. A remote boat's texture swaps to the sunk
+  sprite once it reports `sunk: true`, the same way the local boat does.
 - **Hooks are synced too**: a cast in flight is drawn on every other
   player's screen exactly as it is on the caster's — hook sprite plus
   the rope line back to their boat — so you can see an opponent
