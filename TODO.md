@@ -338,12 +338,51 @@
       reuses the identical, already-verified rendering path with just a
       different string list, so risk is low.
 
+## Done (v22)
+- [x] Fixed the v21 Controls button running off the bottom of the screen
+      on mobile: it sat a fixed gap below the (fixed-size) Play button,
+      which on a short phone-landscape screen could push it past the
+      visible edge. `createControlsButton()` now clamps its own `y` to
+      `HEIGHT - btnH - margin`, only moving up from its normal spot when
+      a short screen actually requires it — reported via a real-phone
+      screenshot after v21.
+- [x] Added `TOUCH_UI_SCALE` — `UI_SCALE` floored at 0.85 on touch
+      devices only (`Math.max(UI_SCALE, 0.85)`, non-touch unaffected) —
+      and switched the joystick, hook button (+ its icon), restart
+      button, and the title-screen Controls button to it instead of
+      plain `UI_SCALE`. These are the things a finger has to repeatedly
+      hit, and plain `UI_SCALE` was shrinking them right alongside HUD
+      art, reading as "too small for chunky fingers" per the user's
+      report, well before the layout looked crowded. Deliberately left
+      the upgrade shop buttons and the Play button unscaled — not part
+      of what was reported, and the upgrade buttons already have a
+      known follow-up (see Next up) since enlarging them risks
+      overlapping the HUD border, which needs its own pass.
+- [x] Verified the Controls-button cutoff fix live via a temporary debug
+      handle (`window.__debugScene`, removed before commit) at two short
+      landscape sizes (780x330 and 700x280 innerHeight): confirmed the
+      button's box, text, and click zone all stay in sync and fully
+      on-screen, and that the clamp only engages (moves the button up
+      from its normal position) when the screen is actually short enough
+      to need it. Screenshots weren't available this session (Browser
+      pane stayed non-composited/`document.hidden` throughout), so this
+      relied on reading Phaser's own object geometry instead — same
+      fallback used for touch-gated code in earlier sessions. The
+      `TOUCH_UI_SCALE` size increases themselves weren't visually
+      confirmed for the same reason this tool can't emulate genuine
+      touch capability (`IS_TOUCH_DEVICE` is fixed at page load from
+      real touch support) — verified by arithmetic/code review instead.
+
 ## Next up (pick based on what you want most)
+- [ ] Bigger/repositionable touch targets for the upgrade shop
+      specifically — still unchanged from desktop; enlarging them like
+      the other touch buttons risks overlapping the top HUD border,
+      which would need its own (larger) pass to fix properly
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
-      button, v20's cross-device sync + visible hooks, and v21's
-      Controls panel all work in practice (this session could only
-      simulate window dimensions and differing lake sizes, not genuine
-      touch)
+      button, v20's cross-device sync + visible hooks, v21's Controls
+      panel, and v22's bigger touch targets + unstuck Controls button
+      all work in practice (this session could only simulate window
+      dimensions and differing lake sizes, not genuine touch)
 - [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
       touch device — neither has had a genuine touch-input playtest yet
 - [ ] Sync fish/sharks so all players share one pool instead of each

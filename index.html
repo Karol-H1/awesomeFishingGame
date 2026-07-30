@@ -96,6 +96,14 @@ const HEIGHT = window.innerHeight;
 const UI_REFERENCE_HEIGHT = 800;
 const UI_SCALE = Math.min(1, HEIGHT / UI_REFERENCE_HEIGHT);
 
+// Tap targets that fingers actually have to hit repeatedly during play —
+// joystick, hook button, restart button — read as "too small" well before
+// plain UI_SCALE would call the layout crowded, since a fingertip doesn't
+// shrink with the screen the way HUD art can. Floor the scale for these
+// specifically, touch devices only; non-touch gets plain UI_SCALE (no
+// floor), so desktop sizing is unaffected.
+const TOUCH_UI_SCALE = IS_TOUCH_DEVICE ? Math.max(UI_SCALE, 0.85) : UI_SCALE;
+
 const BORDER = Math.round(50 * UI_SCALE);      // left/right/bottom distance from screen edge to the water
 const TOP_BORDER = Math.round(100 * UI_SCALE); // taller than the other sides — reserved for the HUD (fish count + upgrade shop)
 const BEACH = Math.round(18 * UI_SCALE);       // thickness of the sand band, the inner part of the border, next to the water
@@ -171,12 +179,12 @@ const UPGRADE_ICON_SIZE = Math.round(28 * UI_SCALE); // icon texture is drawn fu
 // createTouchControls()). Joystick bottom-left replaces WASD; hook
 // button bottom-right replaces click-to-aim, using the same
 // nearest-thing-in-range auto-aim as the spacebar (see tryAutoAimCast()).
-const JOYSTICK_MARGIN = Math.round(110 * UI_SCALE);      // distance from the bottom-left corner to the joystick's center
-const JOYSTICK_BASE_RADIUS = Math.round(55 * UI_SCALE);
-const JOYSTICK_STICK_RADIUS = Math.round(26 * UI_SCALE);
-const JOYSTICK_DEADZONE = Math.round(12 * UI_SCALE);     // pixels of drag before movement kicks in, avoids jitter near center
-const HOOK_BUTTON_MARGIN = Math.round(100 * UI_SCALE);   // distance from the bottom-right corner to the button's center
-const HOOK_BUTTON_RADIUS = Math.round(48 * UI_SCALE);
+const JOYSTICK_MARGIN = Math.round(110 * TOUCH_UI_SCALE);      // distance from the bottom-left corner to the joystick's center
+const JOYSTICK_BASE_RADIUS = Math.round(55 * TOUCH_UI_SCALE);
+const JOYSTICK_STICK_RADIUS = Math.round(26 * TOUCH_UI_SCALE);
+const JOYSTICK_DEADZONE = Math.round(12 * TOUCH_UI_SCALE);     // pixels of drag before movement kicks in, avoids jitter near center
+const HOOK_BUTTON_MARGIN = Math.round(100 * TOUCH_UI_SCALE);   // distance from the bottom-right corner to the button's center
+const HOOK_BUTTON_RADIUS = Math.round(48 * TOUCH_UI_SCALE);
 
 // Fish
 const LAKE_W = WATER_RIGHT - WATER_LEFT;
@@ -344,8 +352,12 @@ class TitleScene extends Phaser.Scene {
   // and mobile can check how to play before starting — the two have
   // completely different controls (see showControlsPanel()).
   createControlsButton(y) {
-    const btnW = 150;
-    const btnH = 40;
+    const btnW = Math.round(150 * TOUCH_UI_SCALE);
+    const btnH = Math.round(40 * TOUCH_UI_SCALE);
+    // The Play button above is a fixed size, so on a short phone-landscape
+    // screen the fixed gap before this button could push it past the
+    // bottom edge — clamp so it always stays fully visible and tappable.
+    y = Math.min(y, HEIGHT - btnH - Math.round(16 * TOUCH_UI_SCALE));
     const btnX = WIDTH / 2 - btnW / 2;
 
     const box = this.add.graphics();
@@ -681,10 +693,10 @@ class MainScene extends Phaser.Scene {
     // Restart button — R has no touch equivalent, so this is how
     // mobile players (or anyone else) restart after sinking. Only
     // shown/interactive once actually game over (see sinkBoat()).
-    const restartBtnW = Math.round(160 * UI_SCALE);
-    const restartBtnH = Math.round(50 * UI_SCALE);
+    const restartBtnW = Math.round(160 * TOUCH_UI_SCALE);
+    const restartBtnH = Math.round(50 * TOUCH_UI_SCALE);
     const restartBtnX = WIDTH / 2 - restartBtnW / 2;
-    const restartBtnY = HEIGHT / 2 + Math.round(40 * UI_SCALE);
+    const restartBtnY = HEIGHT / 2 + Math.round(40 * TOUCH_UI_SCALE);
 
     this.restartButtonBox = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setVisible(false);
     this.restartButtonBox.fillStyle(0x1a1a1a, 0.75);
@@ -1131,7 +1143,7 @@ class MainScene extends Phaser.Scene {
     hookButtonGraphics.fillCircle(hx, hy, HOOK_BUTTON_RADIUS);
     hookButtonGraphics.lineStyle(2, 0xffffff, 0.6);
     hookButtonGraphics.strokeCircle(hx, hy, HOOK_BUTTON_RADIUS);
-    this.add.image(hx, hy, 'hookTexture').setScale(2.5 * UI_SCALE).setDepth(DEPTH_TOUCH_UI + 1);
+    this.add.image(hx, hy, 'hookTexture').setScale(2.5 * TOUCH_UI_SCALE).setDepth(DEPTH_TOUCH_UI + 1);
 
     const hookZone = this.add.zone(hx, hy, HOOK_BUTTON_RADIUS * 2, HOOK_BUTTON_RADIUS * 2);
     hookZone.setInteractive();

@@ -315,6 +315,25 @@ the boat contained.
   of its own (how far a tree reaches, its spacing) that had to be scaled
   the same way, otherwise the trees would overflow past a thinner ring
   into the beach at small sizes.
+- **`TOUCH_UI_SCALE`**: a second scale factor, used only for the things
+  a finger actually has to repeatedly hit — joystick, hook button,
+  restart button, the title screen's Controls button. Plain `UI_SCALE`
+  shrinks these right alongside HUD art, which on a short phone screen
+  reads as "too small to tap" well before the layout looks crowded (a
+  fingertip doesn't get smaller with the screen). It's `UI_SCALE`
+  floored at `0.85` on touch devices (`Math.max(UI_SCALE, 0.85)`), so
+  it never shrinks past that regardless of how short the screen is;
+  non-touch devices get plain `UI_SCALE` (no floor), so desktop sizing
+  is unaffected.
+- The title screen's Controls button (below Play) sits a fixed gap
+  below the Play button, which is itself a fixed size (not scaled —
+  it's comfortably tappable at any screen size and wasn't the reported
+  problem). On a short phone-landscape screen that fixed gap could push
+  the Controls button below the visible screen edge, cutting it off.
+  `createControlsButton()` clamps its own `y` to
+  `HEIGHT - btnH - margin` so it always stays fully on-screen, only
+  moving up from its normal position when a short screen actually
+  requires it.
 
 ## Out of scope for MVP (future ideas)
 - More upgrades beyond the four above.
