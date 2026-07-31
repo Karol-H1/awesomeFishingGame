@@ -296,7 +296,16 @@ if (!playerId) {
 }
 
 const NETWORK_SYNC_INTERVAL_MS = 100; // ~10 updates/sec written to Firebase
-const REMOTE_LABEL_OFFSET_Y = Math.round(20 * UI_SCALE); // nickname (or "Player" if none set) label above a remote boat
+const REMOTE_LABEL_OFFSET_Y = Math.round(20 * TOUCH_UI_SCALE); // nickname (or "Player" if none set) label above a remote boat
+// A nickname is information a player actually needs to read, not just
+// decorative HUD chrome — so on touch it starts from a bigger base
+// size (14 vs 10) before TOUCH_UI_SCALE's own 0.85 floor is applied,
+// rather than just relying on that floor alone (which would still
+// only land at ~9px on a short phone screen, not much of a fix for
+// something reported as "too small to read"). Desktop is untouched:
+// TOUCH_UI_SCALE equals plain UI_SCALE there, so this base is the only
+// thing gating the size change to touch devices specifically.
+const REMOTE_LABEL_FONT_BASE = IS_TOUCH_DEVICE ? 14 : 10;
 
 // Battling — hooking another player's boat (rather than a fish) damages
 // them and steals some of their catch. The attacker detects the hit
@@ -964,7 +973,7 @@ class MainScene extends Phaser.Scene {
     // any sync, not just this first one.
     const label = this.add.text(pos.x, pos.y - REMOTE_LABEL_OFFSET_Y, '', {
       fontFamily: 'sans-serif',
-      fontSize: Math.round(10 * UI_SCALE) + 'px',
+      fontSize: Math.round(REMOTE_LABEL_FONT_BASE * TOUCH_UI_SCALE) + 'px',
       color: '#ffffff',
       stroke: '#000000',
       strokeThickness: 2

@@ -510,6 +510,32 @@
       not a real bug — confirmed by re-fronting that tab and seeing it
       immediately snap back in sync).
 
+## Done (v26)
+- [x] Remote player nickname labels were reported unreadably small on
+      mobile (real-phone report, after v24 added nicknames). Root
+      cause: the label's font size used plain `UI_SCALE`, the same
+      factor baked HUD art shrinks by — on a short phone screen that
+      landed around 5px. Switched to `TOUCH_UI_SCALE` (the 0.85 floor
+      already used for the joystick/hook/restart buttons), but that
+      alone only reaches ~9px, still small for reading a name — so
+      also added a bigger base size specifically for touch
+      (`REMOTE_LABEL_FONT_BASE`, 14 vs 10), landing around 12px on a
+      short touch screen. Desktop is completely unaffected either way
+      (verified the formula reduces to the exact same value non-touch
+      computed before this change).
+- [x] `REMOTE_LABEL_OFFSET_Y` (how far the label floats above the
+      boat) also switched from `UI_SCALE` to `TOUCH_UI_SCALE`, so the
+      now-bigger label gets proportionally more clearance instead of
+      crowding the boat sprite.
+- [x] Verified live on desktop (unaffected, confirmed via the actual
+      computed constants: `TOUCH_UI_SCALE` equals plain `UI_SCALE` for
+      non-touch, `REMOTE_LABEL_FONT_BASE` stays 10, so the formula is
+      mathematically identical to the pre-change code) — no console
+      errors. The touch-specific size increase itself couldn't be
+      visually confirmed for the same reason as v22/v23/v25 (no
+      genuine touch emulation available here) — checked by arithmetic
+      instead (14 × 0.85 floor ≈ 12px, vs. 5px before).
+
 ## Next up (pick based on what you want most)
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
       button, v20's cross-device sync + visible hooks, v21's Controls

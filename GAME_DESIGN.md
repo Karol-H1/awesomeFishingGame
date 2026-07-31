@@ -257,6 +257,14 @@ the boat contained.
   synced by an older build with no `nickname` field at all, which reads
   the same as an empty one. A remote boat's texture swaps to the sunk
   sprite once it reports `sunk: true`, the same way the local boat does.
+- The label's font size starts from a bigger base on touch devices (14
+  vs 10) before `TOUCH_UI_SCALE`'s own floor is applied
+  (`REMOTE_LABEL_FONT_BASE`) — a nickname is something a player
+  actually needs to read, not just decorative HUD chrome, so relying
+  on `TOUCH_UI_SCALE`'s floor alone (landing around 9px on a short
+  phone screen) wasn't enough once it was reported as too small to
+  read in practice. Desktop is unaffected, since the bigger base only
+  applies when `IS_TOUCH_DEVICE` is true.
 - **Hooks are synced too**: a cast in flight is drawn on every other
   player's screen exactly as it is on the caster's — hook sprite plus
   the rope line back to their boat — so you can see an opponent
