@@ -575,6 +575,53 @@
       short simulated height and normal desktop size, no console
       errors either way.
 
+## Done (v28)
+- [x] Fixed a second real-phone-reported title-screen bug, found right
+      after v27 fixed the Controls-on-top-of-Play overlap: the title
+      itself, at a fixed 56px font never scaled by anything, could eat
+      over a sixth of a short phone screen's height on its own — v27's
+      fix correctly stopped anything from *overlapping*, but didn't
+      stop the un-shrinking title from crowding everything below it
+      into a cramped strip. User's own suggested fix ("move the title
+      up so there's more room") was exactly right.
+- [x] Title and subtitle font size now scale down with `UI_SCALE` on a
+      short screen (previously always fixed at 56px/18px, unlike
+      everything else on this screen). Folded them into the *same*
+      sequential stack v27 built for the interactive elements below,
+      rather than keeping them on their own separate fixed-fraction
+      positioning — so the whole title screen, top to bottom, is one
+      shrink-to-fit stack instead of two independently-computed pieces
+      that could still conflict with each other.
+- [x] The title's vertical anchor still reproduces the *exact* original
+      "center at `HEIGHT * 0.32`" position whenever the stack fits
+      without shrinking — verified `titleY === HEIGHT * 0.32` exactly
+      at a window tall enough not to need shrinking, and font size
+      exactly 56px at a full 800px-tall window — so desktop is
+      completely unaffected. It only moves higher, along with every
+      other gap in the stack, once a short screen genuinely needs the
+      room back.
+- [x] Title/subtitle heights are now measured from the real rendered
+      Phaser text objects (`.height`) instead of estimated — created
+      early (at a placeholder position) specifically to measure them
+      before the rest of the stack's math runs, then repositioned once
+      the full layout is computed. Removes a whole category of
+      "estimated vs. actual" mismatch risk that contributed to both
+      real-phone bugs this session.
+- [x] Verified more thoroughly than v27: same reimplement-the-formula-
+      standalone sweep from 200–900px (zero overlaps), but this time
+      cross-checked against *real* measured title/subtitle heights
+      pulled live from the browser at three different heights (300,
+      380, 800) — not just the touch-only blocks like last time, since
+      title/subtitle scale via plain `UI_SCALE`, which (unlike
+      `TOUCH_UI_SCALE`) behaves identically whether `IS_TOUCH_DEVICE`
+      is true or not, so this part could be verified exactly, not just
+      by arithmetic. At H=300 (shorter than the reported bug screen-
+      shot) Controls now fits with ~41px to spare, previously the
+      exact scenario that clipped/overlapped. Confirmed Play remains
+      clickable (`startGame()` still fires cleanly) and the Controls
+      panel still opens/closes correctly, hiding and restoring the
+      nickname input as expected.
+
 ## Next up (pick based on what you want most)
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
       button, v20's cross-device sync + visible hooks, v21's Controls

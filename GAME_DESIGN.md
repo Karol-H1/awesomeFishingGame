@@ -42,28 +42,44 @@ the boat contained.
     need recomputing) while the Controls overlay is open — being a real
     DOM element layered above the canvas, it would otherwise float on
     top of that overlay's dim background instead of being covered by it.
-  - Everything below the subtitle (nickname input, Play, "press any
-    key", Controls) is laid out as a **sequential stack**: each block's
-    position is the previous block's bottom edge plus a gap, computed
-    once in `TitleScene.create()`. Block heights never shrink (that
-    would undo their own legibility/tappability fixes), but if the
+  - **The entire title screen** — title, subtitle, nickname input,
+    Play, "press any key", Controls — is laid out as one **sequential
+    stack**: each block's position is the previous block's bottom edge
+    plus a gap, computed once in `TitleScene.create()`. Interactive
+    block heights (nickname/Play/Controls) never shrink, since that
+    would undo their own legibility/tappability fixes — but if the
     full-size stack doesn't fit a short screen, every *gap* between
-    blocks shrinks by the same factor until it does — so blocks can
+    blocks shrinks by the same factor until it does, so blocks can
     never overlap each other, by construction, regardless of screen
-    height. This replaced an earlier version where only the Controls
-    button's own position was clamped to the screen — that worked
-    until the nickname field was inserted above Play and pushed it
-    lower on a short *touch* screen specifically (where the touch-only
-    size floor makes the nickname block taller than this session's
-    non-touch testing had covered), at which point the old clamp could
-    pull Controls up far enough to land on top of Play, blocking it
-    entirely — reported via a real-phone screenshot. Verified this
-    time by reimplementing the exact same formula standalone and
-    sweeping screen heights from 200–900px, confirming zero overlaps
-    at both the touch floor and the uncapped desktop scale, then cross-
-    checking several of those predictions against the live-rendered
-    scene's actual object positions (exact match) — not just the two
-    or three heights spot-checked visually last time.
+    height.
+  - **Title and subtitle font size scale down with `UI_SCALE`** on a
+    short screen (previously always fixed at 56px/18px) — at full
+    size, the title alone could eat over a sixth of a short phone
+    screen's height, crowding out the interactive elements below it.
+    Their heights are measured from the real rendered text objects
+    (`.height`), not estimated, so the layout math above is exact
+    rather than guessed. The title's vertical anchor still reproduces
+    the original "center at `HEIGHT * 0.32`" position exactly whenever
+    the stack fits without shrinking (i.e. on desktop, nothing changed
+    there) — it only moves higher, along with every other gap in the
+    stack, once a short screen genuinely needs the room back.
+  - This two-part stack (interactive elements below the subtitle, then
+    title/subtitle folded in above them) replaced two narrower fixes in
+    sequence, each of which turned out to only address part of the
+    problem once tested on a real phone: first, only the Controls
+    button's own position was clamped to the screen, which broke once
+    the nickname field pushed Play itself lower on a short touch screen
+    and the clamp pulled Controls up onto Play, blocking it entirely.
+    Then, once that overlap was fixed, the *un-shrinking* title font
+    turned out to still crowd out the rest of the stack on its own,
+    just without causing an outright overlap — reported via two
+    separate real-phone screenshots. Verified this time by
+    reimplementing the exact formula standalone and sweeping screen
+    heights from 200–900px, confirming zero overlaps at both the touch
+    floor and the uncapped desktop scale, then cross-checking several
+    of those predictions — including real measured title/subtitle
+    heights, not estimates — against the live-rendered scene's actual
+    object positions (exact match).
 
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.

@@ -343,35 +343,46 @@ class TitleScene extends Phaser.Scene {
       g.strokePath();
     }
 
-    this.add.text(WIDTH / 2, HEIGHT * 0.32, 'Awesome Fishing Game', {
+    // Title/subtitle font sizes scale down with UI_SCALE on a short
+    // screen (previously fixed at 56px/18px always) — on a phone the
+    // title alone, at full size, could eat over a sixth of the whole
+    // screen height, crowding out everything below it. Created before
+    // the layout math below so we can read their *real* rendered
+    // .height (text metrics, not a guessed multiplier) rather than
+    // estimating — repositioned once the full stack is computed.
+    const titleFontSize = Math.max(24, Math.round(56 * UI_SCALE));
+    const title = this.add.text(WIDTH / 2, 0, 'Awesome Fishing Game', {
       fontFamily: 'sans-serif',
-      fontSize: '56px',
+      fontSize: titleFontSize + 'px',
       fontStyle: 'bold',
       color: '#ffffff',
       stroke: '#1a3a5c',
-      strokeThickness: 8
+      strokeThickness: Math.max(3, Math.round(8 * UI_SCALE))
     }).setOrigin(0.5);
 
-    const subtitleY = HEIGHT * 0.32 + 50;
-    this.add.text(WIDTH / 2, subtitleY, 'Cast your hook. Catch fish. Watch out for sharks.', {
+    const subtitleFontSize = Math.max(11, Math.round(18 * UI_SCALE));
+    const subtitle = this.add.text(WIDTH / 2, 0, 'Cast your hook. Catch fish. Watch out for sharks.', {
       fontFamily: 'sans-serif',
-      fontSize: '18px',
+      fontSize: subtitleFontSize + 'px',
       color: '#eaf4ff',
       stroke: '#000000',
-      strokeThickness: 3
+      strokeThickness: Math.max(1, Math.round(3 * UI_SCALE))
     }).setOrigin(0.5);
 
-    // Everything below the subtitle (nickname input, Play, "press any
-    // key", Controls) is laid out as a sequential stack — each block's
-    // position is the previous block's bottom edge plus a gap — so
-    // blocks can never overlap each other by construction, however
-    // short the screen is. Block *heights* (nicknameH/btnH/controlsH)
-    // stay full-size always, since shrinking those would undo the
-    // legibility/tappability fixes they already got; only the *gaps*
-    // between blocks shrink, uniformly, if the full-size stack doesn't
-    // fit — this is what a single fixed "0.55 * HEIGHT" fraction for
-    // Play (the pre-nickname-field layout) couldn't account for once a
-    // new block was inserted above it on an already-short touch screen.
+    // The entire title screen — title, subtitle, nickname input, Play,
+    // "press any key", Controls — is laid out as one sequential stack:
+    // each block's position is the previous block's bottom edge plus a
+    // gap, so blocks can never overlap each other by construction,
+    // however short the screen is. Block *heights* stay as-is (title/
+    // subtitle already shrunk above; nickname/Play/Controls stay
+    // full-size, since shrinking those would undo their own legibility/
+    // tappability fixes) — only the *gaps* between blocks shrink,
+    // uniformly, if the full-size stack doesn't fit. This replaced a
+    // fixed "HEIGHT * 0.32" anchor for the title and a fixed "+50"
+    // offset for the subtitle that, together with an unshrinking title
+    // font, could by themselves crowd out the interactive elements
+    // below on a short phone screen — reported via a real-phone
+    // screenshot after an earlier fix addressed overlapping instead.
     const nicknameH = Math.round(34 * TOUCH_UI_SCALE);
     const btnW = 180;
     const btnH = 60; // Play button — deliberately not touch-scaled, see GAME_DESIGN.md
@@ -379,21 +390,33 @@ class TitleScene extends Phaser.Scene {
     const controlsH = Math.round(40 * TOUCH_UI_SCALE);
     const bottomMargin = Math.round(16 * TOUCH_UI_SCALE);
 
+    // topMargin's nominal value reproduces the exact old "title center
+    // at HEIGHT * 0.32" position when everything fits (gapShrink below
+    // is 1) — it only pulls the title higher, same as every other gap
+    // here, once a short screen genuinely needs the room back.
+    const topMargin = Math.max(10, HEIGHT * 0.32 - title.height / 2);
+    const gapBelowTitle = Math.round(12 * UI_SCALE);
     const gapAboveNickname = Math.round(30 * TOUCH_UI_SCALE);
     const gapBelowNickname = Math.round(20 * TOUCH_UI_SCALE);
     const gapBelowPlay = Math.round(50 * TOUCH_UI_SCALE); // "press any key" sits inside this gap, see below
-    const totalGaps = gapAboveNickname + gapBelowNickname + gapBelowPlay;
-    const totalBlocks = nicknameH + btnH + controlsH;
-    const available = HEIGHT - subtitleY - totalBlocks - bottomMargin;
+    const totalGaps = topMargin + gapBelowTitle + gapAboveNickname + gapBelowNickname + gapBelowPlay + bottomMargin;
+    const totalBlocks = title.height + subtitle.height + nicknameH + btnH + controlsH;
+    const available = HEIGHT - totalBlocks;
     // Never below 0.35 — beyond that things read as crushed together
     // rather than just cozy. On a screen too short even for that, the
     // stack extends past the bottom edge (Controls partially/fully
     // off-screen) rather than overlapping — the same "prefer clipping
-    // over overlapping" trade-off the v22 Controls-button clamp made,
-    // just now correctly accounting for everything above it too.
+    // over overlapping" trade-off an earlier Controls-button clamp
+    // made, just now correctly accounting for everything, top to
+    // bottom, instead of only part of the stack.
     const gapShrink = Math.max(0.35, Math.min(1, available / totalGaps));
 
-    let cursorY = subtitleY;
+    let cursorY = topMargin * gapShrink;
+    title.setY(cursorY + title.height / 2);
+    cursorY += title.height;
+    cursorY += gapBelowTitle * gapShrink;
+    subtitle.setY(cursorY + subtitle.height / 2);
+    cursorY += subtitle.height;
     cursorY += gapAboveNickname * gapShrink;
     const nicknameY = cursorY + nicknameH / 2;
     cursorY += nicknameH;
