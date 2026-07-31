@@ -536,6 +536,45 @@
       genuine touch emulation available here) — checked by arithmetic
       instead (14 × 0.85 floor ≈ 12px, vs. 5px before).
 
+## Done (v27)
+- [x] Fixed a real-phone-reported bug: the title screen's Controls
+      button rendered on top of the Play button, blocking it entirely
+      (Play was unclickable — a critical bug, not cosmetic). Root
+      cause: v24 added the nickname input above Play and made Play's
+      position `Math.max(0.55*HEIGHT, ...)` to leave it room, which on
+      a short screen pushes Play *lower* than before; v22's Controls-
+      button clamp only checked "does Controls fit below its own
+      natural position," not "does the clamped position still stay
+      below Play" — so on a short *touch* screen specifically (where
+      `TOUCH_UI_SCALE`'s 0.85 floor makes the nickname block taller
+      than it is on non-touch, which is all this session could
+      actually test at the time), the clamp pulled Controls up far
+      enough to land on Play.
+- [x] Rebuilt the whole vertical stack (nickname input, Play, "press
+      any key", Controls) as a single sequential layout computed once
+      in `TitleScene.create()` — each block's position is the previous
+      block's bottom edge plus a gap, so blocks can never overlap each
+      other by construction. Block heights stay full-size always
+      (shrinking those would undo their own legibility fixes from
+      v22/v24); if the full-size stack doesn't fit a short screen,
+      every gap shrinks by the same factor (floored at 0.35) until it
+      does. `createControlsButton()` no longer does its own clamping —
+      it just draws at the position it's given, since the caller now
+      has full context of everything above it.
+- [x] Verified far more rigorously than the bug that slipped through
+      last time: reimplemented the exact formula standalone in Node
+      and swept screen heights from 200–900px (5px steps) at both the
+      touch floor (0.85) and the uncapped desktop scale, asserting no
+      two blocks ever overlap and "press any key" always lands
+      strictly between Play and Controls — zero failures. Then cross-
+      checked several of those predictions against the actual
+      `y`/position values on the live-rendered title screen via a
+      temporary debug handle — exact match on every value. Confirmed
+      live that Play is genuinely clickable again (starts the game)
+      and the Controls panel still opens/closes cleanly, at both a
+      short simulated height and normal desktop size, no console
+      errors either way.
+
 ## Next up (pick based on what you want most)
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
       button, v20's cross-device sync + visible hooks, v21's Controls

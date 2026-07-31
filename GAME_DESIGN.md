@@ -42,11 +42,28 @@ the boat contained.
     need recomputing) while the Controls overlay is open — being a real
     DOM element layered above the canvas, it would otherwise float on
     top of that overlay's dim background instead of being covered by it.
-  - The Play button's vertical position normally stays exactly the
-    fixed fraction of screen height it always was; it only shifts lower
-    if a short screen genuinely doesn't leave the input room to breathe
-    above it (same "only intervene when actually necessary" approach as
-    the Controls button's own on-screen clamp).
+  - Everything below the subtitle (nickname input, Play, "press any
+    key", Controls) is laid out as a **sequential stack**: each block's
+    position is the previous block's bottom edge plus a gap, computed
+    once in `TitleScene.create()`. Block heights never shrink (that
+    would undo their own legibility/tappability fixes), but if the
+    full-size stack doesn't fit a short screen, every *gap* between
+    blocks shrinks by the same factor until it does — so blocks can
+    never overlap each other, by construction, regardless of screen
+    height. This replaced an earlier version where only the Controls
+    button's own position was clamped to the screen — that worked
+    until the nickname field was inserted above Play and pushed it
+    lower on a short *touch* screen specifically (where the touch-only
+    size floor makes the nickname block taller than this session's
+    non-touch testing had covered), at which point the old clamp could
+    pull Controls up far enough to land on top of Play, blocking it
+    entirely — reported via a real-phone screenshot. Verified this
+    time by reimplementing the exact same formula standalone and
+    sweeping screen heights from 200–900px, confirming zero overlaps
+    at both the touch floor and the uncapped desktop scale, then cross-
+    checking several of those predictions against the live-rendered
+    scene's actual object positions (exact match) — not just the two
+    or three heights spot-checked visually last time.
 
 ## Core mechanics (MVP)
 - Player controls a canoe with **WASD**.
@@ -404,15 +421,10 @@ the boat contained.
   it never shrinks past that regardless of how short the screen is;
   non-touch devices get plain `UI_SCALE` (no floor), so desktop sizing
   is unaffected.
-- The title screen's Controls button (below Play) sits a fixed gap
-  below the Play button, which is itself a fixed size (not scaled —
-  it's comfortably tappable at any screen size and wasn't the reported
-  problem). On a short phone-landscape screen that fixed gap could push
-  the Controls button below the visible screen edge, cutting it off.
-  `createControlsButton()` clamps its own `y` to
-  `HEIGHT - btnH - margin` so it always stays fully on-screen, only
-  moving up from its normal position when a short screen actually
-  requires it.
+- The title screen's whole vertical layout (nickname input, Play,
+  "press any key", Controls) is a shrink-to-fit sequential stack — see
+  Title screen above for the full explanation and the real-phone bug
+  that motivated it.
 - The upgrade shop buttons use `TOUCH_UI_SCALE` too, and dropped their
   text label (e.g. "Boat Speed") entirely — the icon alone identifies
   the upgrade. Three stacked elements (icon/label/cost) in a small

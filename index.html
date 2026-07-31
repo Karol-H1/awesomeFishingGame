@@ -361,6 +361,53 @@ class TitleScene extends Phaser.Scene {
       strokeThickness: 3
     }).setOrigin(0.5);
 
+    // Everything below the subtitle (nickname input, Play, "press any
+    // key", Controls) is laid out as a sequential stack — each block's
+    // position is the previous block's bottom edge plus a gap — so
+    // blocks can never overlap each other by construction, however
+    // short the screen is. Block *heights* (nicknameH/btnH/controlsH)
+    // stay full-size always, since shrinking those would undo the
+    // legibility/tappability fixes they already got; only the *gaps*
+    // between blocks shrink, uniformly, if the full-size stack doesn't
+    // fit — this is what a single fixed "0.55 * HEIGHT" fraction for
+    // Play (the pre-nickname-field layout) couldn't account for once a
+    // new block was inserted above it on an already-short touch screen.
+    const nicknameH = Math.round(34 * TOUCH_UI_SCALE);
+    const btnW = 180;
+    const btnH = 60; // Play button — deliberately not touch-scaled, see GAME_DESIGN.md
+    const controlsW = Math.round(150 * TOUCH_UI_SCALE);
+    const controlsH = Math.round(40 * TOUCH_UI_SCALE);
+    const bottomMargin = Math.round(16 * TOUCH_UI_SCALE);
+
+    const gapAboveNickname = Math.round(30 * TOUCH_UI_SCALE);
+    const gapBelowNickname = Math.round(20 * TOUCH_UI_SCALE);
+    const gapBelowPlay = Math.round(50 * TOUCH_UI_SCALE); // "press any key" sits inside this gap, see below
+    const totalGaps = gapAboveNickname + gapBelowNickname + gapBelowPlay;
+    const totalBlocks = nicknameH + btnH + controlsH;
+    const available = HEIGHT - subtitleY - totalBlocks - bottomMargin;
+    // Never below 0.35 — beyond that things read as crushed together
+    // rather than just cozy. On a screen too short even for that, the
+    // stack extends past the bottom edge (Controls partially/fully
+    // off-screen) rather than overlapping — the same "prefer clipping
+    // over overlapping" trade-off the v22 Controls-button clamp made,
+    // just now correctly accounting for everything above it too.
+    const gapShrink = Math.max(0.35, Math.min(1, available / totalGaps));
+
+    let cursorY = subtitleY;
+    cursorY += gapAboveNickname * gapShrink;
+    const nicknameY = cursorY + nicknameH / 2;
+    cursorY += nicknameH;
+    cursorY += gapBelowNickname * gapShrink;
+    const btnY = cursorY;
+    cursorY += btnH;
+    const gapBelowPlayActual = gapBelowPlay * gapShrink;
+    // 45% of the way through the Play→Controls gap — proportional
+    // rather than a fixed offset, so it always lands strictly between
+    // the two regardless of how much that gap has shrunk.
+    const pressKeyY = btnY + btnH + gapBelowPlayActual * 0.45;
+    cursorY += gapBelowPlayActual;
+    const controlsY = cursorY;
+
     // A real HTML <input>, not a Phaser Text — Phaser has no built-in
     // editable/typable text widget, so a positioned DOM element is the
     // standard way to take text entry in a canvas game. Shown only here;
@@ -368,10 +415,6 @@ class TitleScene extends Phaser.Scene {
     const nicknameInput = document.getElementById('nickname-input');
     nicknameInput.value = localStorage.getItem('nickname') || '';
     nicknameInput.style.display = 'block';
-    const nicknameGapAbove = Math.round(30 * TOUCH_UI_SCALE);
-    const nicknameH = Math.round(34 * TOUCH_UI_SCALE);
-    const nicknameGapBelow = Math.round(20 * TOUCH_UI_SCALE);
-    const nicknameY = subtitleY + nicknameGapAbove + nicknameH / 2;
     nicknameInput.style.left = (WIDTH / 2) + 'px';
     nicknameInput.style.top = (nicknameY - nicknameH / 2) + 'px';
     nicknameInput.style.width = Math.min(240, WIDTH - 60) + 'px';
@@ -388,14 +431,7 @@ class TitleScene extends Phaser.Scene {
       nicknameInput.removeEventListener('keydown', nicknameEnterHandler);
     });
 
-    const btnW = 180;
-    const btnH = 60;
     const btnX = WIDTH / 2 - btnW / 2;
-    // Normally a fixed fraction of the screen, same as always — but on a
-    // short screen that fraction could land before the nickname input
-    // above it has room to breathe, so never let it get closer than the
-    // input actually needs.
-    const btnY = Math.max(HEIGHT * 0.55, nicknameY + nicknameH / 2 + nicknameGapBelow);
 
     const btnGraphics = this.add.graphics();
     btnGraphics.fillStyle(0x1a1a1a, 0.6);
@@ -428,7 +464,7 @@ class TitleScene extends Phaser.Scene {
     // behind it can't also start the game — see showControlsPanel().
     zone.on('pointerdown', () => { if (!this.controlsOpen) this.startGame(); });
 
-    this.add.text(WIDTH / 2, btnY + btnH + 26, 'or press any key', {
+    this.add.text(WIDTH / 2, pressKeyY, 'or press any key', {
       fontFamily: 'sans-serif',
       fontSize: '13px',
       color: '#cfe3ff'
@@ -446,19 +482,17 @@ class TitleScene extends Phaser.Scene {
     });
 
     this.controlsOpen = false;
-    this.createControlsButton(btnY + btnH + 50);
+    // controlsY was already computed above as part of the same
+    // sequential stack Play and the nickname input belong to — passed
+    // straight through rather than recomputed, so there's exactly one
+    // place that decides vertical layout, not two disagreeing ones.
+    this.createControlsButton(controlsY, controlsW, controlsH);
   }
 
   // A small button under the Play button, so players on both desktop
   // and mobile can check how to play before starting — the two have
   // completely different controls (see showControlsPanel()).
-  createControlsButton(y) {
-    const btnW = Math.round(150 * TOUCH_UI_SCALE);
-    const btnH = Math.round(40 * TOUCH_UI_SCALE);
-    // The Play button above is a fixed size, so on a short phone-landscape
-    // screen the fixed gap before this button could push it past the
-    // bottom edge — clamp so it always stays fully visible and tappable.
-    y = Math.min(y, HEIGHT - btnH - Math.round(16 * TOUCH_UI_SCALE));
+  createControlsButton(y, btnW, btnH) {
     const btnX = WIDTH / 2 - btnW / 2;
 
     const box = this.add.graphics();
