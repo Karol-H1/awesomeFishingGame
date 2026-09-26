@@ -713,7 +713,42 @@
       memory/performance of the new tiled-water/live-border background
       — needs a real-phone look, flagged below.
 
+## Done (v30)
+- [x] Fixed fish swimming too fast in too big a circle — a real bug left
+      over from v29's world-size pivot, reported after a real-phone test
+      of that change. `FISH_CIRCLE_RADIUS` used to be `LAKE_W / 32`, which
+      made sense when the lake was screen-sized, but once `LAKE_W` became
+      the ~3.5x-bigger fixed world width, the orbit radius (and therefore
+      the fish's actual px/sec speed at the same angular rate) grew right
+      along with it — nothing about a fish's own swim circle should scale
+      with how big the lake is. `FISH_CIRCLE_RADIUS` is now a fixed 30px
+      world-space constant (same fixed-regardless-of-world-size treatment
+      already given to the boat/rocks/hitboxes via `WORLD_OBJECT_SCALE` in
+      v29), and `FISH_ANGULAR_SPEED` was also slowed (π/2 → π/3 rad/sec,
+      a 6s loop instead of 4s) for a calmer swim on top of that.
+- [x] Raised `FISH_MAX` 30 → 120. Root cause of "too few fish": v29 scaled
+      the fish cap by `WORLD_SIZE_MULTIPLIER` (3.5x, a *linear* dimension)
+      to match the bigger world, but the world's *area* actually grew by
+      3.5² ≈ 12.25x — so fish density had quietly dropped to under a third
+      of the original screen-sized lake's. 120 (10 original × ~12.25x
+      area) restores that original density across the bigger world.
+- [x] Added "different fish types with different swim patterns/speeds" to
+      Next up, per the user's ask, for whenever variety is wanted beyond
+      the current one-size-fits-all fish/shark orbit behavior.
+- [x] Verified via direct scene inspection (`window.__debugScene`, removed
+      before commit): confirmed exactly 120 fish spawn; manually stepped
+      `updateFish()` with real millisecond deltas and confirmed a fish's
+      orbit radius measures exactly 30px and its angle advances at exactly
+      π/3 rad/sec; confirmed the nearest fish to a fresh spawn (worst-case,
+      a corner of the world) was ~344px away — about 4.6s of travel at
+      base boat speed, comfortably inside the "never more than 10s without
+      a fish" target. `node --check` passed throughout.
+
 ## Next up (pick based on what you want most)
+- [ ] Different kinds of fish, each with its own swim pattern and speed
+      (e.g. faster/skittish vs. slower/lazy, or a non-circular pattern)
+      instead of every fish/shark sharing one orbit behavior — requested
+      after v30's fish speed/density fix
 - [ ] Real-phone check specifically for this session's world/camera/
       minimap change: touch controls still feel right now that the
       camera scrolls under a fixed HUD, and the new tiled-water +

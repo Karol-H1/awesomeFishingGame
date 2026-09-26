@@ -283,10 +283,14 @@ const HOOK_BUTTON_RADIUS = Math.round(48 * TOUCH_UI_SCALE);
 // Fish
 const LAKE_W = WATER_RIGHT - WATER_LEFT;
 const LAKE_H = WATER_BOTTOM - WATER_TOP;
-const FISH_MAX = 30; // up from the original screen-sized lake's 10, roughly matching the bigger world's area
+const FISH_MAX = 120; // up from 30 — that number only scaled with WORLD_SIZE_MULTIPLIER (3.5x, a *linear* dimension), but
+// the world's *area* grew by 3.5^2 = ~12.25x, so fish density had actually dropped to under a third of the original
+// screen-sized lake's. 120 (= original 10 * ~12.25x area) restores that density across the bigger world.
 const FISH_SPAWN_INTERVAL_MS = 2500; // how often we try to top the pool back up to FISH_MAX
-const FISH_CIRCLE_RADIUS = LAKE_W / 32; // "swim in circles about 1/32 the size of the lake" — already relative to LAKE_W, no separate scaling needed
-const FISH_ANGULAR_SPEED = Math.PI / 2; // radians/sec around their own circle
+const FISH_CIRCLE_RADIUS = 30; // fixed world-space px, NOT derived from LAKE_W — a fish's own swim circle is a fixed
+// per-entity trait (like WORLD_OBJECT_SCALE), not something that should balloon with the overall lake size. The old
+// `LAKE_W / 32` grew ~3.5x along with the bigger world and made circles look far too large.
+const FISH_ANGULAR_SPEED = Math.PI / 3; // radians/sec around their own circle — full loop in 6s, slowed from 4s
 const FISH_CATCH_RADIUS = 16; // hook-to-fish distance that counts as a catch
 const FISH_TEX_W = 20; // baked texture size, left unscaled — see spawnSwimmer()'s setScale(WORLD_OBJECT_SCALE)
 const FISH_TEX_H = 10;
