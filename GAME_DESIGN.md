@@ -576,16 +576,30 @@ overlaps the lake on a short screen.
   `startFollow` with a small lerp for smooth trailing rather than a
   rigid snap), clamped to the world's bounds — .io-game style: the
   player sees only a zoomed-in slice of a much bigger lake, not the
-  whole thing at once. There's deliberately **no optical zoom**
-  (`camera.zoom` stays 1) — the "zoomed in" feeling comes purely from
-  the world being bigger than the viewport, not from magnifying
-  anything, so boat size, hitboxes, and hook range all read exactly as
-  they did before this existed.
+  whole thing at once. The base zoom is 1 (boat size, hitboxes, etc.
+  all read the same as before this existed) — the "zoomed in" feeling
+  mostly comes from the world being bigger than the viewport, not from
+  magnifying anything.
+- **Range-triggered zoom-out**: the one exception to "no optical zoom."
+  The Hook Range upgrade (see Upgrade shop below) is repeatable with no
+  cap, and its faint range circle is drawn in world pixels — on a world
+  bigger than the viewport, a big enough range eventually runs the
+  circle off the edge of the screen, worst on mobile where the viewport
+  is smallest. `updateRangeZoom()` solves directly for the camera zoom
+  that keeps the circle inside the smaller screen dimension (with a
+  margin), floored at `MIN_RANGE_ZOOM` (0.5) so a heavily upgraded
+  player doesn't zoom the whole game out to nothing. It eases in via
+  Phaser's `Camera.zoomTo()` whenever Hook Range is purchased. Since
+  every HUD element shares the same main camera (no dedicated UI
+  camera), the HUD shrinks by that same modest factor when this
+  triggers — an accepted trade-off given the zoom is meant to be slight;
+  a dedicated UI camera is the documented fallback if that turns out to
+  matter on a real device (see TODO.md).
 - The HUD (fish count, upgrade shop, joystick, hook button, restart
   button, minimap) is pinned to the screen via Phaser's
   `setScrollFactor(0)` on every HUD element, so it stays fixed in place
   while the world scrolls underneath rather than panning away with the
-  camera.
+  camera (though scroll factor doesn't cancel zoom — see above).
 - **Minimap**: top-right, stacked below the upgrade-shop row (clear of
   the touch joystick/hook button in the bottom corners). Deliberately
   minimal — the world's boundary plus one dot per player (yours vs.

@@ -753,7 +753,54 @@
       removed before commit): confirmed exactly 200 fish spawn and
       `scene.boatSpeed` reads 100 on a fresh game. `node --check` passed.
 
+## Done (v32)
+- [x] Camera now zooms out slightly as the (repeatable, uncapped) Hook
+      Range upgrade grows — fixes the range circle running off the edge
+      of the screen on a big enough range, reported worst on mobile
+      where the viewport is smallest. `updateRangeZoom()` solves directly
+      for the zoom that keeps the circle inside the smaller screen
+      dimension (with a margin), so it adapts to whatever screen it's
+      running on rather than a fixed zoom-per-purchase guess; floored at
+      `MIN_RANGE_ZOOM` (0.5) so a heavily upgraded player doesn't zoom
+      the whole game out to nothing. Eases in via Phaser's built-in
+      `Camera.zoomTo()` on purchase; set once (non-animated) at the end
+      of `create()` too, so it's correct from the start on any screen.
+- [x] The range circle itself (`drawHookRange()`) needed no changes — it
+      already draws in world pixels, so it automatically renders smaller
+      once the camera zooms out.
+- [x] Known, accepted trade-off: this game has one camera, and every HUD
+      element (fish count, shop row, joystick, hook button, restart
+      button, minimap) is pinned to it via `setScrollFactor(0)`. Scroll
+      factor only cancels a camera's *pan*, not its *zoom* — so the HUD
+      shrinks by the same modest factor as the world when this triggers.
+      Accepted since the requested zoom is meant to be slight and this
+      avoids a much bigger change (a dedicated second UI camera, with
+      its own "which objects belong to which camera" bookkeeping for
+      every object created at runtime — fish, sharks, remote players).
+      Flagged below for a real-phone look; a UI camera is the documented
+      fallback if the HUD shrink turns out to matter in practice.
+- [x] Verified via direct scene inspection (`window.__debugScene`,
+      removed before commit): at the starting `HOOK_RANGE` (125) zoom
+      computed as 1 on a normal-sized viewport (and correctly <1 on a
+      deliberately tiny 313x554 test viewport, confirming the formula
+      adapts rather than assuming a fixed screen size); simulated 8
+      successive range purchases and confirmed zoom decreases each time
+      and clamps at exactly `MIN_RANGE_ZOOM` from the 4th purchase
+      onward; manually stepped Phaser's internal loop
+      (`game.loop.step()`, same rAF-freeze workaround as v29) to confirm
+      the `zoomTo()` tween actually eases from 1 to the exact target
+      zoom rather than snapping or stalling partway. Confirmed visually
+      in the Browser pane: boat/fish/HUD all render proportionally
+      smaller at a reduced zoom, HUD icons/text stay legible. `node
+      --check` passed throughout.
+
 ## Next up (pick based on what you want most)
+- [ ] If a real-phone look at v32 shows the HUD shrinking too much at
+      max zoom-out (floor 0.5), add a dedicated UI camera so the HUD
+      stays a fixed screen size regardless of world zoom — bigger change
+      (needs "which objects belong to which camera" bookkeeping for
+      every object created at runtime: fish/sharks via spawnSwimmer(),
+      remote players via addRemoteBoat()), so deferred unless needed
 - [ ] Different kinds of fish, each with its own swim pattern and speed
       (e.g. faster/skittish vs. slower/lazy, or a non-circular pattern)
       instead of every fish/shark sharing one orbit behavior — requested

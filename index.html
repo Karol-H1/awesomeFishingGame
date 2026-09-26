@@ -248,6 +248,17 @@ const HOOK_RANGE = 125;      // starting max cast distance — "increase hook ra
 const HOOK_RANGE_COLOR = 0xffffff;
 const HOOK_RANGE_ALPHA = 0.2;
 
+// Range-triggered camera zoom: the range circle is drawn in world pixels
+// (drawHookRange()), so on a world bigger than the viewport, a big enough
+// range upgrade runs the circle off the edge of the screen — worst on
+// mobile, where the viewport is smallest. Zooming the camera out just
+// enough to keep the circle on screen fixes this without touching the
+// circle itself. MIN_RANGE_ZOOM floors how far out we'll go, since Hook
+// Range is a repeatable, uncapped upgrade — without a floor, a heavily
+// upgraded player would zoom the whole game out to nothing.
+const ZOOM_RANGE_MARGIN = 50;
+const MIN_RANGE_ZOOM = 0.5;
+
 // Upgrades — bought with caught fish, as a row of icon buttons along
 // the top-right of the HUD. Defined as {cost, apply} pairs in
 // createUpgradeButtons() so adding another later is a one-entry change.
@@ -772,13 +783,14 @@ class MainScene extends Phaser.Scene {
     // Camera follows the boat around the world (see WORLD_WIDTH/HEIGHT
     // above) instead of the old "the whole lake always fits on screen"
     // model — this is the actual "zoomed in, .io-game style" effect the
-    // player sees; no .setZoom() call, since the effect comes purely
-    // from the world being bigger than the viewport, not from
-    // magnifying anything (boat size, hitboxes, hook range all stay
-    // pixel-identical to before). A small lerp gives a smooth trailing
-    // camera rather than a rigid snap-to-boat every frame.
+    // player sees; the base zoom is 1 (boat size, hitboxes, etc. all
+    // stay pixel-identical to before) — the only zoom that ever kicks in
+    // is the range-triggered one below, see updateRangeZoom(). A small
+    // lerp gives a smooth trailing camera rather than a rigid
+    // snap-to-boat every frame.
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.startFollow(this.boat, true, 0.08, 0.08);
+    this.updateRangeZoom(false); // set correctly from the start, in case a short screen ever needs it at base HOOK_RANGE too
 
     // Rocks scattered across the lake (see ROCK_POSITIONS). Static —
     // they never move — but still need a physics body to collide with.
@@ -1354,6 +1366,18 @@ class MainScene extends Phaser.Scene {
     this.hookRangeGraphics.strokeCircle(this.boat.x, this.boat.y, this.hookRange);
   }
 
+  // Keeps the range circle on screen as the Hook Range upgrade grows it:
+  // solves directly for the zoom that fits the circle (plus a margin)
+  // inside the smaller screen dimension, rather than a fixed zoom step
+  // per upgrade, so it adapts to whatever screen it's running on. Floored
+  // at MIN_RANGE_ZOOM since the upgrade is repeatable with no cap.
+  updateRangeZoom(animate) {
+    const available = Math.min(WIDTH, HEIGHT) / 2 - ZOOM_RANGE_MARGIN;
+    const targetZoom = Phaser.Math.Clamp(available / this.hookRange, MIN_RANGE_ZOOM, 1);
+    if (animate) this.cameras.main.zoomTo(targetZoom, 500, 'Sine.easeInOut');
+    else this.cameras.main.setZoom(targetZoom);
+  }
+
   // Shared by both the click handler and the spacebar auto-aim: sends
   // the hook out from the boat toward (targetX, targetY), clamped to
   // the current hook range.
@@ -1711,7 +1735,10 @@ class MainScene extends Phaser.Scene {
         icon: 'iconRangeTexture',
         cost: UPGRADE_RANGE_COST,
         isAvailable: () => true,
-        apply: () => { this.hookRange += UPGRADE_RANGE_INCREMENT; }
+        apply: () => {
+          this.hookRange += UPGRADE_RANGE_INCREMENT;
+          this.updateRangeZoom(true); // ease the camera out so the bigger range circle stays on screen
+        }
       },
       {
         label: 'Hook Speed',
