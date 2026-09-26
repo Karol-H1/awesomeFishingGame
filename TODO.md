@@ -744,6 +744,15 @@
       base boat speed, comfortably inside the "never more than 10s without
       a fish" target. `node --check` passed throughout.
 
+## Done (v31)
+- [x] Raised `FISH_MAX` 120 → 200 per direct request for noticeably more
+      fish, past the area-density-matching baseline v30 established.
+- [x] Raised `BOAT_SPEED` (the starting/base speed, before any Boat Speed
+      upgrades) 75 → 100, reported as a little slow.
+- [x] Verified via direct scene inspection (`window.__debugScene`,
+      removed before commit): confirmed exactly 200 fish spawn and
+      `scene.boatSpeed` reads 100 on a fresh game. `node --check` passed.
+
 ## Next up (pick based on what you want most)
 - [ ] Different kinds of fish, each with its own swim pattern and speed
       (e.g. faster/skittish vs. slower/lazy, or a non-circular pattern)

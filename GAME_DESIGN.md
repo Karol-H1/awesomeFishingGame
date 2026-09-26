@@ -198,14 +198,11 @@ the boat contained.
   instead of needing a precise click.
 
 ## Fish
-- Up to 120 fish swim in the lake at a time (up from 30, which was
-  itself up from 10 before the world got bigger — see Screen / world
-  size). The population is scaled to the world's *area*, not its
-  width/height, since that's what "fish density" actually means — the
-  world is ~3.5x bigger per axis (~12.25x by area), so the cap is
-  ~12.25x the original 10 to keep the same density across the bigger
-  lake. You should never go more than ~10 seconds without a fish
-  somewhere nearby.
+- Up to 200 fish swim in the lake at a time — up from 120 (an
+  area-matched density baseline; itself up from 30, then 10, before
+  the world got bigger — see Screen / world size), then bumped further
+  by request for noticeably more fish. You should never go more than
+  ~10 seconds without a fish somewhere nearby.
 - Each fish is anchored to a fixed spawn point and continuously
   circles it, at a small **fixed** radius (independent of the lake's
   size — a fish's own swim circle doesn't get bigger just because the
