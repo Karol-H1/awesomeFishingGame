@@ -95,22 +95,23 @@ if (IS_TOUCH_DEVICE && window.innerHeight > window.innerWidth) {
 }
 
 // Sized to the actual browser window rather than a fixed 800x600, so the
-// game genuinely fills the screen instead of being scaled/letterboxed
-// into it. Everything else in this file (lake texture, physics bounds,
-// spawn positions, HUD placement) is already derived from WIDTH/HEIGHT,
-// so the whole world scales to whatever window it loads into.
+// game genuinely fills the screen. This is now purely the *viewport* —
+// what this player can see — not the lake's size; see WORLD_WIDTH/
+// WORLD_HEIGHT below for that. HUD placement is still derived from
+// WIDTH/HEIGHT, since the HUD is a fixed screen-space overlay.
 const WIDTH = window.innerWidth;
 const HEIGHT = window.innerHeight;
 
-// Every fixed-pixel size below (border thickness, buttons, joystick,
-// hitboxes, hook reach...) was originally tuned looking at a normal
-// desktop browser window. A phone in landscape is much shorter, so
-// without this, those same fixed sizes eat a far bigger fraction of
-// the (smaller) screen — border/HUD crowd out the lake, joystick and
-// buttons look oversized. UI_SCALE brings every "size" constant down
-// by the same fraction the height is short by, preserving the same
-// proportions a desktop window already has. Capped at 1 so a normal
-// (tall enough) desktop window is completely unaffected.
+// Every fixed-pixel HUD size below (buttons, joystick, HUD text...) was
+// originally tuned looking at a normal desktop browser window. A phone
+// in landscape is much shorter, so without this, those same fixed sizes
+// eat a far bigger fraction of the (smaller) screen. UI_SCALE brings
+// every screen-space "size" constant down by the same fraction the
+// height is short by, preserving the same proportions a desktop window
+// already has. Capped at 1 so a normal (tall enough) desktop window is
+// completely unaffected. This only applies to genuinely screen-space
+// HUD now (buttons, joystick, text, nickname input, title screen) — see
+// the note above WATER_LEFT below for why world content no longer uses it.
 const UI_REFERENCE_HEIGHT = 800;
 const UI_SCALE = Math.min(1, HEIGHT / UI_REFERENCE_HEIGHT);
 
@@ -122,95 +123,128 @@ const UI_SCALE = Math.min(1, HEIGHT / UI_REFERENCE_HEIGHT);
 // floor), so desktop sizing is unaffected.
 const TOUCH_UI_SCALE = IS_TOUCH_DEVICE ? Math.max(UI_SCALE, 0.85) : UI_SCALE;
 
-const BORDER = Math.round(50 * UI_SCALE);      // left/right/bottom distance from screen edge to the water
-const TOP_BORDER = Math.round(100 * UI_SCALE); // taller than the other sides — reserved for the HUD (fish count + upgrade shop)
-const BEACH = Math.round(18 * UI_SCALE);       // thickness of the sand band, the inner part of the border, next to the water
-const BOAT_SPEED = 75; // starting speed — "increase boat speed" is an upgrade, see UPGRADE_SPEED_INCREMENT — not a size, doesn't scale
+// World — a single fixed lake size shared by every player, independent
+// of anyone's own screen. Previously WIDTH/HEIGHT (this player's own
+// window) doubled as the lake size too, so the whole lake was always
+// fully visible at once; now the camera (see MainScene.create()) follows
+// the boat around a world bigger than any one viewport, .io-game style,
+// with a minimap (see drawMinimap()) filling in what's off-screen.
+// WORLD_SIZE_MULTIPLIER is the single knob for "how much bigger than a
+// typical old-style screen-sized lake" — safe to retune later.
+const WORLD_REFERENCE_W = 1200, WORLD_REFERENCE_H = 800;
+const WORLD_SIZE_MULTIPLIER = 3.5;
+const WORLD_WIDTH = Math.round(WORLD_REFERENCE_W * WORLD_SIZE_MULTIPLIER);
+const WORLD_HEIGHT = Math.round(WORLD_REFERENCE_H * WORLD_SIZE_MULTIPLIER);
 
-// Water rect derived from the (asymmetric) border, reused for physics
-// bounds, spawn positions, and the lake texture.
+// Every world-space size from here down is a fixed constant, not scaled
+// by UI_SCALE — the world, and everything in it (boat, rocks, hitboxes,
+// hook range...), is the same size for every player regardless of their
+// screen, unlike the old "the world IS the screen" model where shrinking
+// things to fit a small screen made sense. WORLD_OBJECT_SCALE replaces
+// the old per-viewer `.setScale(UI_SCALE)` on world sprites — always 1,
+// named so it's easy to find every place that intentionally uses a fixed
+// world scale instead of a screen-relative one.
+const WORLD_OBJECT_SCALE = 1;
+const BORDER = 60;  // land ring thickness — equal on all four sides now (no more HUD-reserved taller top, see step 3 below)
+const BEACH = 20;   // thickness of the sand band, the inner part of the border, next to the water
+const BOAT_SPEED = 75; // starting speed — "increase boat speed" is an upgrade, see UPGRADE_SPEED_INCREMENT
+
+// Water rect derived from the (now-symmetric) border, reused for physics
+// bounds, spawn positions, and the lake background.
 const WATER_LEFT = BORDER;
-const WATER_RIGHT = WIDTH - BORDER;
-const WATER_TOP = TOP_BORDER;
-const WATER_BOTTOM = HEIGHT - BORDER;
+const WATER_RIGHT = WORLD_WIDTH - BORDER;
+const WATER_TOP = BORDER;
+const WATER_BOTTOM = WORLD_HEIGHT - BORDER;
 
 // Render depth — fish swim underneath the boat rather than on top of it.
 const DEPTH_FISH = 1;
 const DEPTH_BOAT = 2;
-const DEPTH_TOUCH_UI = 10; // joystick/hook button sit above everything, including HUD text
+const DEPTH_TOUCH_UI = 10; // HUD sits above everything — every screen-space HUD element uses this or higher
 
 // Canoe texture dimensions (the baked pixel art itself — left at full
-// size, never scaled, so its hand-drawn proportions never distort;
-// see this.boat.setScale(UI_SCALE) in create() for how it's actually
-// sized on screen) and the hitbox carved out of it. The hitbox IS
-// scaled since it's just a Matter body size, not baked art, and needs
-// to keep matching the boat's visual (scaled) size.
-// The hitbox is trimmed slightly from the sharp bow/stern tips for a
-// hitbox that feels fair rather than exactly tracing the hull outline.
-// With Matter physics, this rectangle is centered on the sprite and
-// rotates together with it — no manual offset math needed.
+// size, never scaled, so its hand-drawn proportions never distort; see
+// this.boat.setScale(WORLD_OBJECT_SCALE) in create()) and the hitbox
+// carved out of it. The hitbox is trimmed slightly from the sharp
+// bow/stern tips for a hitbox that feels fair rather than exactly
+// tracing the hull outline. With Matter physics, this rectangle is
+// centered on the sprite and rotates together with it — no manual
+// offset math needed.
 const CANOE_TEX_W = 76;
 const CANOE_TEX_H = 34;
-const HITBOX_W = Math.round(54 * UI_SCALE);
-const HITBOX_H = Math.round(18 * UI_SCALE);
+const HITBOX_W = 54;
+const HITBOX_H = 18;
 
-// Health bar — drawn fresh each frame (not baked into a texture), so
-// scaling these is just changing draw-time numbers, no art risk.
+// Health bar — drawn fresh each frame (not baked into a texture).
 const MAX_HEALTH = 100;
 const DAMAGE_PERCENT = 5;      // health lost per obstacle (rock or driftwood) collision
 const HIT_COOLDOWN_MS = 800;   // brief invulnerability after a hit, so one
                                 // bump against an obstacle doesn't melt health
                                 // every physics step while still touching it
 const HEALTH_BAR_WIDTH = HITBOX_W; // never exceeds the boat's own length
-const HEALTH_BAR_HEIGHT = Math.round(6 * UI_SCALE);
-const HEALTH_BAR_OFFSET_Y = Math.round(24 * UI_SCALE); // how far below the boat it floats
+const HEALTH_BAR_HEIGHT = 6;
+const HEALTH_BAR_OFFSET_Y = 24; // how far below the boat it floats
 
 // Rocks — ROCK_RADIUS sizes the baked texture (left unscaled, same
 // reasoning as the canoe); each rock's Matter body and on-screen size
-// are separately scaled where they're used, see createRockTexture()'s
-// caller in preload()/create().
+// use the fixed WORLD_OBJECT_SCALE, see createRockTexture()'s caller
+// in preload()/create().
 const ROCK_RADIUS = 20;
 
-// Scattered at fixed fractions of the lake (see toLakeFraction() under
+// Scattered at fixed fractions of the world (see toLakeFraction() under
 // Multiplayer) rather than fixed pixels or randomized per-client — the
-// same trick already used to sync player/hook positions across players
-// with differently-sized lakes, applied here so every player sees
-// rocks in the same relative spots without any network traffic at all
-// (they never move, so there's nothing to keep in sync at runtime).
-// Chosen to spread across the lake while staying clear of the boat's
-// spawn corner (bottom-left, see the spawnOffset boat placement below).
+// same trick already used to sync player/hook positions across players,
+// applied here so every player sees rocks in the same relative spots
+// without any network traffic at all (they never move, so there's
+// nothing to keep in sync at runtime). More entries than the original
+// screen-sized lake had, roughly matching the bigger world's area, and
+// chosen to spread out while staying clear of the boat's spawn corner
+// (bottom-left, see the spawnOffset boat placement below).
 const ROCK_POSITIONS = [
   { nx: 0.50, ny: 0.50 },
-  { nx: 0.22, ny: 0.22 },
-  { nx: 0.78, ny: 0.22 },
-  { nx: 0.78, ny: 0.72 },
-  { nx: 0.35, ny: 0.68 }
+  { nx: 0.20, ny: 0.18 },
+  { nx: 0.40, ny: 0.12 },
+  { nx: 0.62, ny: 0.20 },
+  { nx: 0.82, ny: 0.14 },
+  { nx: 0.90, ny: 0.45 },
+  { nx: 0.72, ny: 0.60 },
+  { nx: 0.55, ny: 0.80 },
+  { nx: 0.35, ny: 0.85 },
+  { nx: 0.15, ny: 0.65 },
+  { nx: 0.10, ny: 0.40 },
+  { nx: 0.30, ny: 0.45 }
 ];
 
-// Driftwood — floats in a straight line across the lake and wraps to
+// Driftwood — floats in a straight line across the world and wraps to
 // the entering edge once it exits the opposite one. Its position is a
 // pure function of wall-clock time (Date.now()), not physics or "time
 // since this client's scene started" (which differs per player) — so
-// every connected player computes the exact same fraction-of-the-lake
+// every connected player computes the exact same fraction-of-the-world
 // position at the same real moment and it's synced for free, the same
 // zero-network-traffic trick as the static rocks above, just extended
-// to something moving. `axis` is which lake fraction sweeps 0→1 over
-// DRIFTWOOD_PERIOD_MS (wrapping via modulo — reaching 1 is the same
-// instant as re-entering at 0, i.e. "respawning on the opposite edge");
-// `cross` is the fixed fraction on the other axis; `phase` offsets the
-// two pieces so they don't move in lockstep.
-const DRIFTWOOD_PERIOD_MS = 22000;
+// to something moving. `axis` is which world fraction sweeps 0→1 over
+// that piece's crossing time (wrapping via modulo — reaching 1 is the
+// same instant as re-entering at 0, i.e. "respawning on the opposite
+// edge"); `cross` is the fixed fraction on the other axis; `phase`
+// offsets the pieces so they don't move in lockstep. Crossing time is
+// derived from DRIFTWOOD_SPEED (a fixed world px/sec) and the relevant
+// world dimension, in updateDriftwood() — not a fixed duration — so
+// driftwood moves at the same real speed regardless of how big the
+// world is, rather than crossing a bigger world in the same time (and
+// so moving faster) as a smaller one would have.
+const DRIFTWOOD_SPEED = 50; // world px/sec
 const DRIFTWOOD_CONFIGS = [
   { axis: 'x', cross: 0.30, phase: 0 },
-  { axis: 'y', cross: 0.68, phase: 0.5 }
+  { axis: 'y', cross: 0.68, phase: 0.5 },
+  { axis: 'x', cross: 0.55, phase: 0.35 },
+  { axis: 'y', cross: 0.42, phase: 0.7 }
 ];
-const DRIFTWOOD_LEN = 46;   // baked texture size, unscaled — see setScale(UI_SCALE) at creation
+const DRIFTWOOD_LEN = 46;   // baked texture size, unscaled — see setScale(WORLD_OBJECT_SCALE) at creation
 const DRIFTWOOD_WIDTH = 16;
 
 // Hook
 const HOOK_SPEED = 300;      // starting px/sec, both casting out and returning — "increase hook speed" is an upgrade
-const HOOK_ARRIVE_DIST = Math.round(4 * UI_SCALE);  // snap-to-target threshold, avoids jitter on the last frame
-const HOOK_RANGE = Math.round(125 * UI_SCALE);      // starting max cast distance — "increase hook range" is an upgrade, see UPGRADE_RANGE_INCREMENT
+const HOOK_ARRIVE_DIST = 4;  // snap-to-target threshold, avoids jitter on the last frame
+const HOOK_RANGE = 125;      // starting max cast distance — "increase hook range" is an upgrade, see UPGRADE_RANGE_INCREMENT
 const HOOK_RANGE_COLOR = 0xffffff;
 const HOOK_RANGE_ALPHA = 0.2;
 
@@ -229,6 +263,12 @@ const UPGRADE_BUTTON_H = Math.round(68 * TOUCH_UI_SCALE);
 const UPGRADE_BUTTON_GAP = Math.round(8 * TOUCH_UI_SCALE);
 const UPGRADE_ICON_SIZE = Math.round(28 * TOUCH_UI_SCALE); // icon texture is drawn fully proportional to this, safe to scale directly
 
+// Screen-space height of the top HUD strip (fish count + upgrade shop),
+// now that the HUD is a fixed overlay rather than baked into the top of
+// the world's border. Used only to keep a click on the HUD from also
+// casting the hook underneath it — see the pointerdown handler below.
+const TOP_HUD_HEIGHT = Math.round(90 * UI_SCALE);
+
 // Touch controls — only created on IS_TOUCH_DEVICE (see
 // createTouchControls()). Joystick bottom-left replaces WASD; hook
 // button bottom-right replaces click-to-aim, using the same
@@ -243,12 +283,12 @@ const HOOK_BUTTON_RADIUS = Math.round(48 * TOUCH_UI_SCALE);
 // Fish
 const LAKE_W = WATER_RIGHT - WATER_LEFT;
 const LAKE_H = WATER_BOTTOM - WATER_TOP;
-const FISH_MAX = 10;
+const FISH_MAX = 30; // up from the original screen-sized lake's 10, roughly matching the bigger world's area
 const FISH_SPAWN_INTERVAL_MS = 2500; // how often we try to top the pool back up to FISH_MAX
 const FISH_CIRCLE_RADIUS = LAKE_W / 32; // "swim in circles about 1/32 the size of the lake" — already relative to LAKE_W, no separate scaling needed
 const FISH_ANGULAR_SPEED = Math.PI / 2; // radians/sec around their own circle
-const FISH_CATCH_RADIUS = Math.round(16 * UI_SCALE); // hook-to-fish distance that counts as a catch
-const FISH_TEX_W = 20; // baked texture size, left unscaled — see spawnSwimmer()'s setScale(UI_SCALE)
+const FISH_CATCH_RADIUS = 16; // hook-to-fish distance that counts as a catch
+const FISH_TEX_W = 20; // baked texture size, left unscaled — see spawnSwimmer()'s setScale(WORLD_OBJECT_SCALE)
 const FISH_TEX_H = 10;
 const FISH_SUBMERGED_TINT = 0x27425c;
 const FISH_SUBMERGED_ALPHA = 0.55; // dark, translucent — reads as a shadow under the surface
@@ -260,14 +300,14 @@ const FISH_CAUGHT_TINT = 0xe8a33d;
 // delivering it to the boat stuns and damages the boat instead of
 // adding to the fish count. A separate, smaller population cap from
 // regular fish.
-const SHARK_MAX = 2;
+const SHARK_MAX = 5; // up from 2, roughly matching the bigger world's area
 const SHARK_SPAWN_INTERVAL_MS = 30000;
 const SHARK_DAMAGE_PERCENT = 20;
 const SHARK_STUN_MS = 1000;
 const SHARK_STUN_TINT = 0xff6666;
-const SHARK_TEX_W = 48; // baked texture size, left unscaled — see spawnSwimmer()'s setScale(UI_SCALE)
+const SHARK_TEX_W = 48; // baked texture size, left unscaled — see spawnSwimmer()'s setScale(WORLD_OBJECT_SCALE)
 const SHARK_TEX_H = 24;
-const SHARK_ATTACK_TEXT_OFFSET_Y = Math.round(-28 * UI_SCALE); // above the boat, mirroring the health bar below it
+const SHARK_ATTACK_TEXT_OFFSET_Y = -28; // above the boat, mirroring the health bar below it
 
 // Multiplayer — Firebase Realtime Database, chosen so there's no server
 // to run ourselves: every client just reads/writes the same free-tier
@@ -296,7 +336,7 @@ if (!playerId) {
 }
 
 const NETWORK_SYNC_INTERVAL_MS = 100; // ~10 updates/sec written to Firebase
-const REMOTE_LABEL_OFFSET_Y = Math.round(20 * TOUCH_UI_SCALE); // nickname (or "Player" if none set) label above a remote boat
+const REMOTE_LABEL_OFFSET_Y = 20; // nickname (or "Player" if none set) label above a remote boat — world-space, matches the fixed boat size
 // A nickname is information a player actually needs to read, not just
 // decorative HUD chrome — so on touch it starts from a bigger base
 // size (14 vs 10) before TOUCH_UI_SCALE's own 0.85 floor is applied,
@@ -316,9 +356,9 @@ const REMOTE_LABEL_FONT_BASE = IS_TOUCH_DEVICE ? 14 : 10;
 // ownership model as everything else each player syncs about themself.
 const PLAYER_HIT_DAMAGE_PERCENT = 10;
 const PLAYER_HIT_FISH_STEAL_MAX = 2;
-const BOAT_HIT_RADIUS = Math.round(26 * UI_SCALE); // hook-to-opponent-boat distance that counts as a hit
+const BOAT_HIT_RADIUS = 26; // hook-to-opponent-boat distance that counts as a hit
 const OUCH_TEXT_DURATION_MS = 900;
-const OUCH_TEXT_OFFSET_Y = Math.round(-34 * UI_SCALE); // a bit higher than the shark-attack text so the two don't fully overlap
+const OUCH_TEXT_OFFSET_Y = -34; // a bit higher than the shark-attack text so the two don't fully overlap
 
 class TitleScene extends Phaser.Scene {
   constructor() {
@@ -657,7 +697,7 @@ class MainScene extends Phaser.Scene {
   preload() {
     // No external image assets for the MVP — we draw everything
     // procedurally with Phaser Graphics and bake it into textures.
-    this.createLakeTexture();
+    this.createWaterTileTexture();
     this.createCanoeTexture();
     this.createRockTexture();
     this.createDriftwoodTexture();
@@ -679,15 +719,23 @@ class MainScene extends Phaser.Scene {
     // it's both useless and in the way (it overlaps the lake on a short
     // screen) for touch players, who have the joystick and hook button.
     document.getElementById('hint').style.display = IS_TOUCH_DEVICE ? 'none' : 'block';
-    this.add.image(0, 0, 'lakeBackground').setOrigin(0, 0);
 
-    // Spawn away from dead-center, since the rock sits in the middle
-    // of the lake and we don't want the boat starting on top of it.
-    // The "90" offset scales too, so the boat spawns the same relative
-    // distance into the water on a smaller (UI_SCALE-shrunk) screen.
-    const spawnOffset = Math.round(90 * UI_SCALE);
-    this.boat = this.matter.add.sprite(BORDER + spawnOffset, HEIGHT - BORDER - spawnOffset, 'canoeTexture');
-    this.boat.setScale(UI_SCALE); // baked art stays full-res; this is what actually makes it look smaller on screen
+    // Water: a small repeating tile (see createWaterTileTexture()) rather
+    // than one image baked at the full world size — a WORLD_WIDTH x
+    // WORLD_HEIGHT raster texture would be tens of MB of GPU memory, a
+    // real risk on lower-end mobile. Border/beach/grass ring drawn
+    // straight into the scene in createBorderGraphics(), for the same
+    // reason — see its comment for why that one's fine left un-baked.
+    this.add.tileSprite(0, 0, WORLD_WIDTH, WORLD_HEIGHT, 'waterTileTexture').setOrigin(0, 0);
+    this.createBorderGraphics();
+
+    // Spawn away from dead-center, since a rock sits there — see
+    // ROCK_POSITIONS. World-space now, so this is the same actual
+    // distance into the water for every player, not just the same
+    // relative distance on their own screen.
+    const spawnOffset = 90;
+    this.boat = this.matter.add.sprite(BORDER + spawnOffset, WORLD_HEIGHT - BORDER - spawnOffset, 'canoeTexture');
+    this.boat.setScale(WORLD_OBJECT_SCALE);
     this.boat.health = MAX_HEALTH;
     this.boat.lastHitTime = 0;
     this.boat.setDepth(DEPTH_BOAT); // above fish, so it doesn't submerge under the boat
@@ -718,14 +766,25 @@ class MainScene extends Phaser.Scene {
     // this as real static wall bodies around the given rectangle.
     this.matter.world.setBounds(WATER_LEFT, WATER_TOP, LAKE_W, LAKE_H);
 
+    // Camera follows the boat around the world (see WORLD_WIDTH/HEIGHT
+    // above) instead of the old "the whole lake always fits on screen"
+    // model — this is the actual "zoomed in, .io-game style" effect the
+    // player sees; no .setZoom() call, since the effect comes purely
+    // from the world being bigger than the viewport, not from
+    // magnifying anything (boat size, hitboxes, hook range all stay
+    // pixel-identical to before). A small lerp gives a smooth trailing
+    // camera rather than a rigid snap-to-boat every frame.
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.startFollow(this.boat, true, 0.08, 0.08);
+
     // Rocks scattered across the lake (see ROCK_POSITIONS). Static —
     // they never move — but still need a physics body to collide with.
     // A circular body suits a round rock better than a rectangle would.
     this.rocks = ROCK_POSITIONS.map(({ nx, ny }) => {
       const pos = this.fromLakeFraction(nx, ny);
       const rock = this.matter.add.image(pos.x, pos.y, 'rockTexture');
-      rock.setScale(UI_SCALE); // baked art stays full-res, same reasoning as the boat above
-      rock.setCircle(ROCK_RADIUS * UI_SCALE); // physics body scaled to match the now-smaller visual
+      rock.setScale(WORLD_OBJECT_SCALE);
+      rock.setCircle(ROCK_RADIUS * WORLD_OBJECT_SCALE);
       rock.setStatic(true);
       return rock;
     });
@@ -740,12 +799,12 @@ class MainScene extends Phaser.Scene {
     // isn't itself pushed or slowed by anything it hits.
     this.driftwood = DRIFTWOOD_CONFIGS.map((driftConfig) => {
       const sprite = this.matter.add.image(0, 0, 'driftwoodTexture');
-      sprite.setScale(UI_SCALE);
+      sprite.setScale(WORLD_OBJECT_SCALE);
       // Same rectangle for both — rotating a game object's body angle
       // (see below) also rotates its Matter body in place, so building
       // the body pre-rotated here as well would double up and leave
       // the vertical piece's hitbox pointing the wrong way again.
-      sprite.setRectangle(DRIFTWOOD_LEN * UI_SCALE, DRIFTWOOD_WIDTH * UI_SCALE);
+      sprite.setRectangle(DRIFTWOOD_LEN * WORLD_OBJECT_SCALE, DRIFTWOOD_WIDTH * WORLD_OBJECT_SCALE);
       if (driftConfig.axis === 'y') {
         // Texture is drawn lying flat (long edge horizontal); rotating
         // a quarter turn makes both the visible log and its physics
@@ -825,7 +884,7 @@ class MainScene extends Phaser.Scene {
     // the target, and once it arrives it flips to 'returning' and
     // chases the boat's current position (which may have moved) back.
     this.hook = this.add.image(this.boat.x, this.boat.y, 'hookTexture');
-    this.hook.setScale(UI_SCALE);
+    this.hook.setScale(WORLD_OBJECT_SCALE);
     this.hook.setVisible(false);
     this.hookState = 'idle';
     this.hookTarget = { x: 0, y: 0 };
@@ -841,7 +900,10 @@ class MainScene extends Phaser.Scene {
     if (!IS_TOUCH_DEVICE) {
       this.input.on('pointerdown', (pointer) => {
         if (this.gameOver || this.hookState !== 'idle') return;
-        if (pointer.worldY < TOP_BORDER) return; // clicks in the HUD strip shouldn't cast the hook
+        // Screen-space check (pointer.y), not world-space — the HUD is a
+        // fixed screen overlay now, not part of the scrolling world, so
+        // it no longer corresponds to any particular world coordinate.
+        if (pointer.y < TOP_HUD_HEIGHT) return; // clicks on the HUD strip shouldn't cast the hook
         this.castHookToward(pointer.worldX, pointer.worldY);
       });
     }
@@ -876,19 +938,22 @@ class MainScene extends Phaser.Scene {
       callback: () => { if (!this.gameOver) this.spawnShark(); }
     });
 
-    // Fish-caught counter, boxed in the top-left corner of the land border.
+    // Fish-caught counter, boxed in the top-left corner of the screen —
+    // a fixed HUD overlay now (setScrollFactor(0)), not part of the
+    // scrolling world, so it stays put as the camera follows the boat.
     this.fishCount = 0;
     const hudX = Math.round(10 * UI_SCALE), hudY = Math.round(10 * UI_SCALE), hudW = Math.round(100 * UI_SCALE), hudH = Math.round(32 * UI_SCALE);
     this.add.graphics()
       .fillStyle(0x1a1a1a, 0.55)
       .fillRoundedRect(hudX, hudY, hudW, hudH, 6)
       .lineStyle(1, 0xffffff, 0.4)
-      .strokeRoundedRect(hudX, hudY, hudW, hudH, 6);
+      .strokeRoundedRect(hudX, hudY, hudW, hudH, 6)
+      .setScrollFactor(0);
     this.fishHudText = this.add.text(hudX + hudW / 2, hudY + hudH / 2, 'Fish: 0', {
       fontFamily: 'sans-serif',
       fontSize: Math.round(15 * UI_SCALE) + 'px',
       color: '#ffffff'
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setScrollFactor(0);
 
     // Shop — a row of icon buttons, top-right, bought with caught fish.
     this.createUpgradeButtons();
@@ -905,7 +970,7 @@ class MainScene extends Phaser.Scene {
       align: 'center',
       stroke: '#000000',
       strokeThickness: 4
-    }).setOrigin(0.5).setVisible(false);
+    }).setOrigin(0.5).setScrollFactor(0).setVisible(false);
 
     // Restart button — R has no touch equivalent, so this is how
     // mobile players (or anyone else) restart after sinking. Only
@@ -915,7 +980,7 @@ class MainScene extends Phaser.Scene {
     const restartBtnX = WIDTH / 2 - restartBtnW / 2;
     const restartBtnY = HEIGHT / 2 + Math.round(40 * TOUCH_UI_SCALE);
 
-    this.restartButtonBox = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setVisible(false);
+    this.restartButtonBox = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setScrollFactor(0).setVisible(false);
     this.restartButtonBox.fillStyle(0x1a1a1a, 0.75);
     this.restartButtonBox.fillRoundedRect(restartBtnX, restartBtnY, restartBtnW, restartBtnH, 10);
     this.restartButtonBox.lineStyle(2, 0xffffff, 0.8);
@@ -926,26 +991,32 @@ class MainScene extends Phaser.Scene {
       fontSize: Math.round(22 * UI_SCALE) + 'px',
       fontStyle: 'bold',
       color: '#ffffff'
-    }).setOrigin(0.5).setDepth(DEPTH_TOUCH_UI).setVisible(false);
+    }).setOrigin(0.5).setDepth(DEPTH_TOUCH_UI).setScrollFactor(0).setVisible(false);
 
-    const restartZone = this.add.zone(WIDTH / 2, restartBtnY + restartBtnH / 2, restartBtnW, restartBtnH);
+    const restartZone = this.add.zone(WIDTH / 2, restartBtnY + restartBtnH / 2, restartBtnW, restartBtnH).setScrollFactor(0);
     restartZone.setInteractive({ useHandCursor: true });
     restartZone.on('pointerdown', () => {
       if (!this.gameOver) return;
       this.scene.restart();
     });
 
+    // Minimap — top-right, stacked below the upgrade-shop row (clear of
+    // the touch joystick/hook button in the bottom corners). See
+    // createMinimap()/drawMinimap() for why it's hand-drawn rather than
+    // a second Phaser camera.
+    this.createMinimap();
+
     this.setupMultiplayer();
   }
 
   // Positions are synced as a fraction of the lake (0..1 on each axis)
-  // rather than as raw pixels, because every player's lake is sized to
-  // their own window — a phone's is far smaller than a desktop's. Sent
-  // as pixels, a phone player roaming their whole lake would show up
-  // squashed into the top-left corner of a desktop player's bigger one
-  // (and the desktop player would often sit outside the phone's lake
-  // entirely). As a fraction, "40% across, 60% down" means the same
-  // place in the lake for everyone, whatever size their screen is.
+  // rather than raw pixels. Originally this was because every player's
+  // lake was sized to their own window; now that WORLD_WIDTH/HEIGHT is
+  // one fixed size shared by everyone, a fraction and a raw world pixel
+  // coordinate are equivalent up to a constant scale factor — kept as a
+  // fraction anyway since rocks/driftwood already define their positions
+  // this way (see ROCK_POSITIONS), and it means nothing here needed to
+  // change when the world stopped being screen-sized.
   toLakeFraction(x, y) {
     return {
       nx: (x - WATER_LEFT) / LAKE_W,
@@ -953,11 +1024,12 @@ class MainScene extends Phaser.Scene {
     };
   }
 
-  // Inverse of toLakeFraction, into this client's own pixel space.
-  // Returns null for missing/garbage input rather than propagating NaN
-  // into sprite positions — a record written by an older build (pixels,
-  // no nx/ny) would otherwise place a boat at NaN and make it vanish
-  // confusingly. Such records get overwritten within a sync tick anyway.
+  // Inverse of toLakeFraction, into world pixel space (the same for
+  // every player now). Returns null for missing/garbage input rather
+  // than propagating NaN into sprite positions — a record written by an
+  // older build (pixels, no nx/ny) would otherwise place a boat at NaN
+  // and make it vanish confusingly. Such records get overwritten within
+  // a sync tick anyway.
   fromLakeFraction(nx, ny) {
     if (!Number.isFinite(nx) || !Number.isFinite(ny)) return null;
     return {
@@ -1022,7 +1094,7 @@ class MainScene extends Phaser.Scene {
     const pos = this.fromLakeFraction(data.nx, data.ny);
     if (!pos) return; // unusable record — the next sync tick will bring a good one
     const sprite = this.add.image(pos.x, pos.y, data.sunk ? 'sunkTexture' : 'canoeTexture');
-    sprite.setScale(UI_SCALE); // same local rendering scale we use for our own boat — a per-viewer choice, not synced
+    sprite.setScale(WORLD_OBJECT_SCALE); // same fixed world scale as our own boat — a real boat size everyone agrees on now, not a per-viewer approximation
     sprite.rotation = data.rotation || 0;
     sprite.setDepth(DEPTH_BOAT);
     // Text set in updateRemoteBoat() below (called immediately after this),
@@ -1041,7 +1113,7 @@ class MainScene extends Phaser.Scene {
     // back to the boat), so a cast is visible to everyone, not just the
     // player making it.
     const hookSprite = this.add.image(pos.x, pos.y, 'hookTexture');
-    hookSprite.setScale(UI_SCALE);
+    hookSprite.setScale(WORLD_OBJECT_SCALE);
     hookSprite.setDepth(DEPTH_BOAT);
     hookSprite.setVisible(false);
     const hookGraphics = this.add.graphics();
@@ -1116,8 +1188,15 @@ class MainScene extends Phaser.Scene {
   updateDriftwood() {
     const now = Date.now();
     for (const dw of this.driftwood) {
-      const cycle = (now + dw.config.phase * DRIFTWOOD_PERIOD_MS) % DRIFTWOOD_PERIOD_MS;
-      const t = cycle / DRIFTWOOD_PERIOD_MS; // 0..1 sweep, wrapping = "respawn on the opposite edge"
+      // Crossing time is derived from a fixed world px/sec speed and the
+      // dimension this piece actually crosses (LAKE_W or LAKE_H, which
+      // may differ) — not a fixed duration — so driftwood moves at the
+      // same real speed regardless of how big the world is. See
+      // DRIFTWOOD_SPEED's comment for why that matters.
+      const dimension = dw.config.axis === 'x' ? LAKE_W : LAKE_H;
+      const periodMs = (dimension / DRIFTWOOD_SPEED) * 1000;
+      const cycle = (now + dw.config.phase * periodMs) % periodMs;
+      const t = cycle / periodMs; // 0..1 sweep, wrapping = "respawn on the opposite edge"
       const nx = dw.config.axis === 'x' ? t : dw.config.cross;
       const ny = dw.config.axis === 'y' ? t : dw.config.cross;
       const pos = this.fromLakeFraction(nx, ny);
@@ -1236,6 +1315,7 @@ class MainScene extends Phaser.Scene {
     this.updateFish(delta);
     this.updateHook(delta);
     this.updateDriftwood();
+    this.drawMinimap();
     this.refreshUpgradeButtons();
 
     // Throttled outgoing sync — writing every frame would be far more
@@ -1346,16 +1426,16 @@ class MainScene extends Phaser.Scene {
     this.joystickVector = { x: 0, y: 0 }; // normalized -1..1, read by update()
     this.joystickPointerId = null;
 
-    const joystickBase = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
+    const joystickBase = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setScrollFactor(0);
     joystickBase.fillStyle(0xffffff, 0.15);
     joystickBase.fillCircle(jx, jy, JOYSTICK_BASE_RADIUS);
     joystickBase.lineStyle(2, 0xffffff, 0.4);
     joystickBase.strokeCircle(jx, jy, JOYSTICK_BASE_RADIUS);
 
-    this.joystickStick = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
+    this.joystickStick = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setScrollFactor(0);
     this.drawJoystickStick(0, 0);
 
-    const joystickZone = this.add.zone(jx, jy, JOYSTICK_BASE_RADIUS * 2.4, JOYSTICK_BASE_RADIUS * 2.4);
+    const joystickZone = this.add.zone(jx, jy, JOYSTICK_BASE_RADIUS * 2.4, JOYSTICK_BASE_RADIUS * 2.4).setScrollFactor(0);
     joystickZone.setInteractive();
     joystickZone.on('pointerdown', (pointer) => {
       this.joystickPointerId = pointer.id;
@@ -1378,14 +1458,14 @@ class MainScene extends Phaser.Scene {
 
     const hx = WIDTH - HOOK_BUTTON_MARGIN;
     const hy = HEIGHT - HOOK_BUTTON_MARGIN;
-    const hookButtonGraphics = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
+    const hookButtonGraphics = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setScrollFactor(0);
     hookButtonGraphics.fillStyle(0x1a1a1a, 0.5);
     hookButtonGraphics.fillCircle(hx, hy, HOOK_BUTTON_RADIUS);
     hookButtonGraphics.lineStyle(2, 0xffffff, 0.6);
     hookButtonGraphics.strokeCircle(hx, hy, HOOK_BUTTON_RADIUS);
-    this.add.image(hx, hy, 'hookTexture').setScale(2.5 * TOUCH_UI_SCALE).setDepth(DEPTH_TOUCH_UI + 1);
+    this.add.image(hx, hy, 'hookTexture').setScale(2.5 * TOUCH_UI_SCALE).setDepth(DEPTH_TOUCH_UI + 1).setScrollFactor(0);
 
-    const hookZone = this.add.zone(hx, hy, HOOK_BUTTON_RADIUS * 2, HOOK_BUTTON_RADIUS * 2);
+    const hookZone = this.add.zone(hx, hy, HOOK_BUTTON_RADIUS * 2, HOOK_BUTTON_RADIUS * 2).setScrollFactor(0);
     hookZone.setInteractive();
     hookZone.on('pointerdown', () => this.tryAutoAimCast());
   }
@@ -1589,7 +1669,7 @@ class MainScene extends Phaser.Scene {
     const centerY = Phaser.Math.Between(WATER_TOP + margin, WATER_BOTTOM - margin);
 
     const swimmer = this.add.image(centerX + FISH_CIRCLE_RADIUS, centerY, 'fishTexture');
-    swimmer.setScale(UI_SCALE); // baked texture (fish or, once caught, shark) stays full-res
+    swimmer.setScale(WORLD_OBJECT_SCALE); // baked texture (fish or, once caught, shark) stays full-res
     swimmer.orbitCenterX = centerX;
     swimmer.orbitCenterY = centerY;
     swimmer.orbitAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
@@ -1658,12 +1738,10 @@ class MainScene extends Phaser.Scene {
     defs.forEach((def, i) => {
       const x = startX + i * (UPGRADE_BUTTON_W + UPGRADE_BUTTON_GAP);
 
-      // Depth above fish/boat (DEPTH_BOAT=2), not just default (0) — on a
-      // short touch screen this row is now tall enough to dip slightly
-      // below TOP_BORDER into the top of the water (see UPGRADE_BUTTON_H
-      // above), and without this a fish/boat passing underneath would
-      // render on top of the button instead of behind it.
-      const box = this.add.graphics().setDepth(DEPTH_TOUCH_UI);
+      // Fixed screen-space HUD (setScrollFactor(0)), not part of the
+      // scrolling world — depth above default (0) just to keep it above
+      // any other screen-fixed HUD it might overlap.
+      const box = this.add.graphics().setDepth(DEPTH_TOUCH_UI).setScrollFactor(0);
       box.fillStyle(0x1a1a1a, 0.55);
       box.fillRoundedRect(x, y, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H, 6);
       box.lineStyle(1, 0xffffff, 0.4);
@@ -1673,13 +1751,13 @@ class MainScene extends Phaser.Scene {
       // upgrade, same info a player would otherwise get from hovering/
       // tapping, and dropping it frees the whole button for a bigger,
       // more legible icon on a small screen instead of three cramped rows.
-      const icon = this.add.image(x + UPGRADE_BUTTON_W / 2, y + iconOffsetY, def.icon).setDepth(DEPTH_TOUCH_UI);
+      const icon = this.add.image(x + UPGRADE_BUTTON_W / 2, y + iconOffsetY, def.icon).setDepth(DEPTH_TOUCH_UI).setScrollFactor(0);
 
       const costText = this.add.text(x + UPGRADE_BUTTON_W / 2, y + costOffsetY, def.cost + ' fish', {
         fontFamily: 'sans-serif',
         fontSize: buttonFontSize,
         color: '#ffd873'
-      }).setOrigin(0.5).setDepth(DEPTH_TOUCH_UI);
+      }).setOrigin(0.5).setDepth(DEPTH_TOUCH_UI).setScrollFactor(0);
 
       const button = { def, box, icon, costText };
 
@@ -1687,7 +1765,7 @@ class MainScene extends Phaser.Scene {
       // Graphics objects have no inherent size Phaser can hit-test, so
       // an invisible zone the size of the button is the simplest way to
       // give it a clickable area.
-      const zone = this.add.zone(x + UPGRADE_BUTTON_W / 2, y + UPGRADE_BUTTON_H / 2, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H);
+      const zone = this.add.zone(x + UPGRADE_BUTTON_W / 2, y + UPGRADE_BUTTON_H / 2, UPGRADE_BUTTON_W, UPGRADE_BUTTON_H).setScrollFactor(0);
       zone.setInteractive({ useHandCursor: true });
       zone.on('pointerdown', () => this.tryPurchase(button));
 
@@ -1717,6 +1795,67 @@ class MainScene extends Phaser.Scene {
     this.refreshUpgradeButtons();
   }
 
+  // Minimap — top-right, stacked below the upgrade-shop row (clear of
+  // the touch joystick/hook button in the bottom corners). Hand-drawn
+  // rather than a second Phaser camera: the scope is deliberately
+  // minimal (world boundary + a dot per player, no fish/rocks/
+  // driftwood), and a camera-based minimap would need an explicit
+  // "ignore" list of every other game object to hit that same scope —
+  // this just draws what's wanted directly, reusing the same "Graphics
+  // cleared and redrawn every frame from live positions" pattern
+  // already used for the health bar and hook-range circle.
+  createMinimap() {
+    const margin = Math.round(10 * UI_SCALE);
+    const worldAspect = WORLD_HEIGHT / WORLD_WIDTH;
+    const minimapW = Math.max(100, Math.round(150 * UI_SCALE));
+    const minimapH = Math.round(minimapW * worldAspect);
+    this.minimapX = WIDTH - margin - minimapW;
+    this.minimapY = margin + UPGRADE_BUTTON_H + margin;
+    this.minimapW = minimapW;
+    this.minimapH = minimapH;
+
+    // Static frame + background, drawn once — only the player dots
+    // (see drawMinimap()) change from here on.
+    this.add.graphics()
+      .fillStyle(0x0b2033, 0.85)
+      .fillRect(this.minimapX, this.minimapY, minimapW, minimapH)
+      .lineStyle(2, 0xffffff, 0.6)
+      .strokeRect(this.minimapX, this.minimapY, minimapW, minimapH)
+      .setScrollFactor(0)
+      .setDepth(DEPTH_TOUCH_UI);
+
+    this.minimapDots = this.add.graphics().setScrollFactor(0).setDepth(DEPTH_TOUCH_UI + 1);
+  }
+
+  // Redrawn every frame (see update()) from live world positions — own
+  // boat one color, every other non-sunk player's boat another, each
+  // linearly scaled from world space into the minimap's screen rect.
+  drawMinimap() {
+    const g = this.minimapDots;
+    g.clear();
+
+    const toMinimap = (worldX, worldY) => ({
+      x: this.minimapX + (worldX / WORLD_WIDTH) * this.minimapW,
+      y: this.minimapY + (worldY / WORLD_HEIGHT) * this.minimapH
+    });
+    const dotRadius = Math.max(2, Math.round(3 * UI_SCALE));
+
+    for (const id in this.remoteBoats) {
+      const remote = this.remoteBoats[id];
+      if (!remote.data || remote.data.sunk) continue;
+      const p = toMinimap(remote.sprite.x, remote.sprite.y);
+      g.fillStyle(0xff6b4a, 1);
+      g.fillCircle(p.x, p.y, dotRadius);
+    }
+
+    // Drawn last so it's never hidden under an overlapping remote dot.
+    if (!this.gameOver) {
+      const p = toMinimap(this.boat.x, this.boat.y);
+      g.fillStyle(0xffe066, 1);
+      g.fillCircle(p.x, p.y, dotRadius + 1);
+    }
+  }
+
   drawHealthBar() {
     const pct = this.boat.health / MAX_HEALTH;
     const barX = this.boat.x - HEALTH_BAR_WIDTH / 2;
@@ -1738,82 +1877,92 @@ class MainScene extends Phaser.Scene {
     this.healthBarGraphics.strokeRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
   }
 
-  createLakeTexture() {
+  // A small repeating tile (see the TileSprite in create()) rather than
+  // one image baked at the world's full size — WORLD_WIDTH x
+  // WORLD_HEIGHT would be a raster texture tens of MB in size, a real
+  // risk on lower-end mobile GPUs, for content (the ripple pattern) that
+  // repeats anyway. Wave period matches the tile's own width exactly so
+  // it lines up seamlessly at the left/right tiling seam.
+  createWaterTileTexture() {
+    const size = 128;
     const g = this.add.graphics();
-    // Grass zone is the outer ring, from the screen edge up to where
-    // the sand begins. Sand fills the ring between grass and water.
-    // The top is a taller ring than the other three sides, reserved
-    // for the HUD (see the fish counter / shop boxes in create()).
+    g.fillStyle(0x3a7bd5, 1);
+    g.fillRect(0, 0, size, size);
+    g.lineStyle(2, 0x5b9be0, 0.5);
+    for (const rowY of [size * 0.25, size * 0.75]) {
+      g.beginPath();
+      g.moveTo(0, rowY);
+      for (let x = 0; x <= size; x += 8) {
+        g.lineTo(x, rowY + Math.sin((x / size) * Math.PI * 2) * 4);
+      }
+      g.strokePath();
+    }
+    g.generateTexture('waterTileTexture', size, size);
+    g.destroy();
+  }
+
+  // The land ring (grass/trees/sand) framing the world's edges. Drawn
+  // directly into the scene rather than baked with generateTexture()
+  // like every other texture in this file — baking would need a texture
+  // the full WORLD_WIDTH x WORLD_HEIGHT size (same memory problem as the
+  // water above), and unlike the water's ripples this content isn't a
+  // fine repeating pattern, just a modest number of shapes (a few
+  // hundred grass patches/trees/sand speckles) around the perimeter, so
+  // it's cheap enough to redraw as a live Graphics object. Built as four
+  // explicit strips (top/bottom/left/right) rather than "fill everything
+  // then let the water cover the middle" the way the old screen-sized
+  // version did, since the water is a separate TileSprite now — filling
+  // the interior here would just be wasted, invisible work.
+  createBorderGraphics() {
+    const g = this.add.graphics();
     const grassSide = BORDER - BEACH;
-    const grassTop = TOP_BORDER - BEACH;
 
-    // Land base (grass)
+    const grassStrips = [
+      [0, 0, WORLD_WIDTH, grassSide],                                   // top
+      [0, WORLD_HEIGHT - grassSide, WORLD_WIDTH, grassSide],            // bottom
+      [0, 0, grassSide, WORLD_HEIGHT],                                  // left
+      [WORLD_WIDTH - grassSide, 0, grassSide, WORLD_HEIGHT]             // right
+    ];
     g.fillStyle(0x4a7c3c, 1);
-    g.fillRect(0, 0, WIDTH, HEIGHT);
+    for (const [x, y, w, h] of grassStrips) g.fillRect(x, y, w, h);
 
-    // Subtle grass texture patches, only within the grass ring
+    // Subtle grass texture patches, scattered within each strip
     g.fillStyle(0x3f6b32, 1);
-    for (let i = 0; i < 60; i++) {
-      const x = Phaser.Math.Between(0, WIDTH);
-      const y = Phaser.Math.Between(0, HEIGHT);
-      if (x < grassSide || x > WIDTH - grassSide || y < grassTop || y > HEIGHT - grassSide) {
-        g.fillCircle(x, y, Phaser.Math.Between(3, 9));
+    for (const [x, y, w, h] of grassStrips) {
+      for (let i = 0; i < 40; i++) {
+        g.fillCircle(Phaser.Math.Between(x, x + w), Phaser.Math.Between(y, y + h), Phaser.Math.Between(3, 9));
       }
     }
 
     // Little pine trees lining the grass, set back from the beach.
-    // Sized relative to the grass ring's own thickness (grassSide/
-    // grassTop, both already UI_SCALE'd) rather than fixed pixels, so a
-    // thinner ring on a small screen gets proportionally smaller trees
-    // instead of them overflowing past it into the beach/water.
-    const treeSpacing = Math.max(1, Math.round(28 * UI_SCALE));
-    const treeStart = Math.round(15 * UI_SCALE);
-    const treeNear = Math.round(10 * UI_SCALE);
-    const treeFar = Math.round(24 * UI_SCALE);
-    const treeHalfWidth = Math.round(7 * UI_SCALE);
+    const treeSpacing = 28, treeStart = 15, treeNear = 10, treeFar = 24, treeHalfWidth = 7;
     g.fillStyle(0x2d5024, 1);
-    for (let x = treeStart; x < WIDTH; x += treeSpacing) {
-      g.fillTriangle(x, grassTop - treeNear, x - treeHalfWidth, grassTop - treeFar, x + treeHalfWidth, grassTop - treeFar);
-      g.fillTriangle(x, HEIGHT - grassSide + treeNear, x - treeHalfWidth, HEIGHT - grassSide + treeFar, x + treeHalfWidth, HEIGHT - grassSide + treeFar);
+    for (let x = treeStart; x < WORLD_WIDTH; x += treeSpacing) {
+      g.fillTriangle(x, grassSide - treeNear, x - treeHalfWidth, grassSide - treeFar, x + treeHalfWidth, grassSide - treeFar);
+      g.fillTriangle(x, WORLD_HEIGHT - grassSide + treeNear, x - treeHalfWidth, WORLD_HEIGHT - grassSide + treeFar, x + treeHalfWidth, WORLD_HEIGHT - grassSide + treeFar);
     }
-    for (let y = treeStart; y < HEIGHT; y += treeSpacing) {
+    for (let y = treeStart; y < WORLD_HEIGHT; y += treeSpacing) {
       g.fillTriangle(grassSide - treeNear, y, grassSide - treeFar, y - treeHalfWidth, grassSide - treeFar, y + treeHalfWidth);
-      g.fillTriangle(WIDTH - grassSide + treeNear, y, WIDTH - grassSide + treeFar, y - treeHalfWidth, WIDTH - grassSide + treeFar, y + treeHalfWidth);
+      g.fillTriangle(WORLD_WIDTH - grassSide + treeNear, y, WORLD_WIDTH - grassSide + treeFar, y - treeHalfWidth, WORLD_WIDTH - grassSide + treeFar, y + treeHalfWidth);
     }
 
     // Sand beach ring, between the grass and the water
+    const sandStrips = [
+      [grassSide, grassSide, WORLD_WIDTH - grassSide * 2, BEACH],                                  // top
+      [grassSide, WORLD_HEIGHT - grassSide - BEACH, WORLD_WIDTH - grassSide * 2, BEACH],           // bottom
+      [grassSide, grassSide, BEACH, WORLD_HEIGHT - grassSide * 2],                                  // left
+      [WORLD_WIDTH - grassSide - BEACH, grassSide, BEACH, WORLD_HEIGHT - grassSide * 2]             // right
+    ];
     g.fillStyle(0xe0c284, 1);
-    g.fillRect(grassSide, grassTop, WIDTH - grassSide * 2, HEIGHT - grassTop - grassSide);
+    for (const [x, y, w, h] of sandStrips) g.fillRect(x, y, w, h);
 
     // A few darker sand speckles / pebbles for texture, confined to the beach ring
     g.fillStyle(0xc9a86a, 0.8);
-    for (let i = 0; i < 90; i++) {
-      const x = Phaser.Math.Between(grassSide, WIDTH - grassSide);
-      const y = Phaser.Math.Between(grassTop, HEIGHT - grassSide);
-      const inOuter = x >= grassSide && x <= WIDTH - grassSide && y >= grassTop && y <= HEIGHT - grassSide;
-      const inInner = x >= WATER_LEFT && x <= WATER_RIGHT && y >= WATER_TOP && y <= WATER_BOTTOM;
-      if (inOuter && !inInner) {
-        g.fillCircle(x, y, Phaser.Math.Between(1, 3));
+    for (const [x, y, w, h] of sandStrips) {
+      for (let i = 0; i < 60; i++) {
+        g.fillCircle(Phaser.Math.Between(x, x + w), Phaser.Math.Between(y, y + h), Phaser.Math.Between(1, 3));
       }
     }
-
-    // Water
-    g.fillStyle(0x3a7bd5, 1);
-    g.fillRect(WATER_LEFT, WATER_TOP, LAKE_W, LAKE_H);
-
-    // Gentle ripple lines on the water
-    g.lineStyle(2, 0x5b9be0, 0.5);
-    for (let y = WATER_TOP + 20; y < WATER_BOTTOM; y += 26) {
-      g.beginPath();
-      g.moveTo(WATER_LEFT + 10, y);
-      for (let x = WATER_LEFT + 10; x < WATER_RIGHT; x += 16) {
-        g.lineTo(x, y + Math.sin(x * 0.05) * 4);
-      }
-      g.strokePath();
-    }
-
-    g.generateTexture('lakeBackground', WIDTH, HEIGHT);
-    g.destroy();
   }
 
   createCanoeTexture() {

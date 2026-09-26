@@ -122,34 +122,42 @@ the boat contained.
   anyone.
 
 ## Hazards
-- **5 rocks** are scattered across the lake (`ROCK_POSITIONS`), rather
-  than the single centered one from earlier versions. Colliding with
-  one costs the boat 5% health, with a brief cooldown per hit (shared
-  across every hazard, rocks and driftwood alike) so leaning on one
-  doesn't drain health every single frame.
-- The boat spawns off-center (bottom-left area of the lake) rather than
-  on top of any rock — `ROCK_POSITIONS` was chosen to leave that corner
-  clear.
-- **2 driftwood** pieces drift in a straight line across the lake and
-  wrap to the entering edge once they cross the opposite one (so
-  "reaching the edge and respawning on another edge" is really just
-  the same straight line, seamlessly continued) — one moves
-  horizontally, the other vertically, so their paths cross rather than
-  running parallel. Bumping one deals the same 5% damage as a rock,
-  same shared cooldown. Unlike rocks, driftwood isn't a real obstacle
-  in the sense of blocking movement by inertia — it's a **static**
-  Matter body (so a dynamic body like the boat still collides with and
-  is physically pushed out of it correctly) that gets manually
-  repositioned every frame rather than actually being simulated, since
-  its motion needs to be a deterministic function of time (see
-  Multiplayer below), not physics.
+- **12 rocks** are scattered across the world (`ROCK_POSITIONS`) — up
+  from 5 when the world became ~12x bigger in area (see Screen / world
+  size). Colliding with one costs the boat 5% health, with a brief
+  cooldown per hit (shared across every hazard, rocks and driftwood
+  alike) so leaning on one doesn't drain health every single frame.
+- The boat spawns off-center (bottom-left area of the world) rather
+  than on top of any rock — `ROCK_POSITIONS` was chosen to leave that
+  corner clear.
+- **4 driftwood** pieces (up from 2, same reasoning as the rocks) drift
+  in a straight line across the world and wrap to the entering edge
+  once they cross the opposite one (so "reaching the edge and
+  respawning on another edge" is really just the same straight line,
+  seamlessly continued) — two move horizontally, two vertically, so
+  their paths cross rather than running parallel. Bumping one deals the
+  same 5% damage as a rock, same shared cooldown. Unlike rocks,
+  driftwood isn't a real obstacle in the sense of blocking movement by
+  inertia — it's a **static** Matter body (so a dynamic body like the
+  boat still collides with and is physically pushed out of it
+  correctly) that gets manually repositioned every frame rather than
+  actually being simulated, since its motion needs to be a
+  deterministic function of time (see Multiplayer below), not physics.
+- Driftwood moves at a fixed **speed** (`DRIFTWOOD_SPEED`, world
+  px/sec), not a fixed crossing *time* — the crossing time is derived
+  per-piece from that speed and whichever world dimension it actually
+  crosses. This matters because the world's size is no longer tied to
+  any player's screen (see Screen / world size): a fixed crossing time
+  would have made driftwood cross the now-much-bigger world just as
+  fast as it used to cross the old screen-sized one, i.e. noticeably
+  faster in absolute terms.
 - Rocks and driftwood are both **synced across every player for free,
   with zero network traffic** — rocks because they're placed at fixed
-  *fractions* of the lake (like player/hook positions, see
+  *fractions* of the world (like player/hook positions, see
   Multiplayer) rather than fixed pixels or randomized per-client, so
-  every player's independent computation lands in the same relative
-  spot; driftwood the same way, but with its moving fraction computed
-  from wall-clock time (`Date.now()`) instead of a fixed constant — see
+  every player's independent computation lands in the same spot;
+  driftwood the same way, but with its moving fraction computed from
+  wall-clock time (`Date.now()`) instead of a fixed constant — see
   Multiplayer below for why that's what makes it synced rather than
   each player seeing their own independent piece of driftwood.
 
@@ -190,9 +198,11 @@ the boat contained.
   instead of needing a precise click.
 
 ## Fish
-- Up to 10 fish swim in the lake at a time. Each fish is anchored to
-  a fixed spawn point and continuously circles it, at a radius about
-  1/32 the width of the lake.
+- Up to 30 fish swim in the lake at a time (up from 10 before the
+  world got bigger — see Screen / world size — scaled up so the
+  bigger world doesn't feel emptier than before). Each fish is
+  anchored to a fixed spawn point and continuously circles it, at a
+  radius about 1/32 the width of the lake.
 - Fish are drawn as dark, translucent silhouettes so they read as
   shapes moving under the water's surface, not surface objects.
 - Rendered below the boat, so a fish swimming under the boat is
@@ -205,7 +215,7 @@ the boat contained.
   cast.
 - Once delivered to the boat, the fish is removed and the player's
   fish count (see HUD below) goes up by one. A repeating timer spawns
-  a replacement fish (respecting the 10-fish cap) so the lake's
+  a replacement fish (respecting the 30-fish cap) so the lake's
   population recovers over time.
 
 ## Sharks
@@ -213,8 +223,9 @@ the boat contained.
   behaviorally identical to a regular fish (same silhouette, same
   circling motion) — there's no way to tell them apart until one is
   caught.
-- Up to 2 sharks can be out at once, independent of the 10-fish cap.
-  A timer tries to spawn one every 30 seconds if under that cap.
+- Up to 5 sharks can be out at once (up from 2, same reasoning as the
+  fish cap), independent of the fish cap. A timer tries to spawn one
+  every 30 seconds if under that cap.
 - Catching one reveals it: it swaps to a much larger red shark sprite
   (rather than just turning opaque like a regular fish) and rides the
   hook back to the boat the same way.
@@ -225,8 +236,10 @@ the boat contained.
   exactly as long as the stun lasts.
 
 ## HUD
-- The top land border is taller than the other three sides
-  specifically to hold the HUD.
+- A fixed screen overlay (`setScrollFactor(0)` on every HUD element,
+  see Camera and minimap above) rather than baked into the top of the
+  world's border the way it used to be — it stays in place as the
+  camera follows the boat around the world.
 - A small box in the top-left corner shows "Fish: N" — the running
   count of fish the player has caught.
 
@@ -263,33 +276,37 @@ the boat contained.
   `hookOut`, `hookNx`, `hookNy`, `nickname`) to `/players/{yourId}`
   about 10 times/sec; every other player's boat is rendered directly
   from that same shared path.
-- **Positions travel as a fraction of the lake (0..1 per axis), not as
-  pixels.** Each player's lake is sized to their own window, so a
-  phone's is far smaller than a desktop's — a phone lake might be
-  796x317 where a desktop's is 1180x750. Sent as raw pixels, a phone
-  player roaming their entire lake would appear squashed into the
-  top-left corner of a desktop player's larger one, and the desktop
-  player would frequently sit outside the phone's lake entirely and
-  vanish. Sent as a fraction, "40% across, 60% down" means the same
-  spot in the lake for everyone, whatever size their screen is. Each
-  client converts to and from its own pixel space on send/receive
-  (`toLakeFraction()` / `fromLakeFraction()`).
-- Trade-off of that approach: since lakes differ in *aspect ratio* too,
-  not just size, relative distances aren't perfectly identical between
-  a phone and a desktop player (something dead-centre reads the same to
-  both, but "two boat-lengths to the left" doesn't map exactly). The
-  alternative — one fixed logical world scaled to fit every screen —
-  would be exact, but reintroduces letterbox bars, which was
-  specifically rejected earlier (see Screen / world size).
+- **Positions travel as a fraction of the world (0..1 per axis), not as
+  pixels.** This dates from when every player's lake was sized to their
+  own window (a phone's far smaller than a desktop's), where a fraction
+  was the only way "40% across, 60% down" could mean the same spot for
+  everyone. Now that `WORLD_WIDTH`/`WORLD_HEIGHT` is one fixed size
+  shared by every player (see Screen / world size), a fraction and a
+  raw world-pixel coordinate are equivalent up to a constant scale
+  factor — kept as a fraction anyway since rocks/driftwood already use
+  the same mechanism, and it meant this code needed zero changes when
+  the world stopped being screen-sized. Each client converts to and
+  from world pixel space on send/receive (`toLakeFraction()` /
+  `fromLakeFraction()`).
+- This also means the old trade-off here — relative distances not
+  being perfectly identical between a phone and a desktop player, since
+  their lakes differed in aspect ratio as well as size — no longer
+  applies. Every player now shares the literal same world, so "two
+  boat-lengths to the left" means exactly the same thing to everyone.
 - Remote boats are plain visuals for now (no physics body, can't be
   bumped into) — a canoe sprite, a floating health bar identical in
   style to your own, and a small label above it so players can tell
-  boats apart (your own has no label). The label shows the other
-  player's **nickname** (set on the title screen, see Title screen
-  above), or "Player" if they left it blank — including for a record
-  synced by an older build with no `nickname` field at all, which reads
-  the same as an empty one. A remote boat's texture swaps to the sunk
-  sprite once it reports `sunk: true`, the same way the local boat does.
+  boats apart (your own has no label). Rendered at the same fixed
+  `WORLD_OBJECT_SCALE` as your own boat — previously each viewer
+  rendered remote boats at their *own* `UI_SCALE`, a per-viewer
+  approximation rather than a real synced size, which stopped making
+  sense once boats have one actual fixed size in the world. The label
+  shows the other player's **nickname** (set on the title screen, see
+  Title screen above), or "Player" if they left it blank — including
+  for a record synced by an older build with no `nickname` field at
+  all, which reads the same as an empty one. A remote boat's texture
+  swaps to the sunk sprite once it reports `sunk: true`, the same way
+  the local boat does.
 - The label's font size starts from a bigger base on touch devices (14
   vs 10) before `TOUCH_UI_SCALE`'s own floor is applied
   (`REMOTE_LABEL_FONT_BASE`) — a nickname is something a player
@@ -398,35 +415,41 @@ the boat contained.
   page in portrait first, the page reloads itself the moment the
   device is actually rotated to landscape, rather than trying to
   live-resize the already-running game with the wrong dimensions.
-- **Scaling for small screens**: every fixed-pixel "size" constant
-  (border thickness, hitboxes, hook reach, buttons, joystick, font
-  sizes...) was originally tuned looking at a normal desktop browser
-  window. A phone in landscape is much shorter, so without any
-  correction those same fixed sizes eat a far bigger fraction of the
-  smaller screen — border/HUD crowd out the lake, joystick and buttons
-  read as oversized. `UI_SCALE` (computed once from `HEIGHT` against an
-  800px reference, capped at 1) scales all of those down together so a
-  short screen keeps the same *proportions* a normal desktop window
-  already has, rather than the same absolute pixel sizes. Capping at 1
-  means a normal-height desktop window is completely unaffected.
+- **Scaling for small screens — HUD only now**: every fixed-pixel HUD
+  size (buttons, joystick, font sizes...) was originally tuned looking
+  at a normal desktop browser window. A phone in landscape is much
+  shorter, so without any correction those same fixed sizes eat a far
+  bigger fraction of the smaller screen. `UI_SCALE` (computed once from
+  `HEIGHT` against an 800px reference, capped at 1) scales HUD sizing
+  down so a short screen keeps the same *proportions* a normal desktop
+  window already has. Capping at 1 means a normal-height desktop window
+  is completely unaffected. This used to apply to the boat/rock/fish/
+  hook/border too, back when the visible lake *was* the screen (see
+  Screen / world size and Camera and minimap) — now that the world is a
+  fixed size shared by everyone, those all use a fixed
+  `WORLD_OBJECT_SCALE` instead (always 1, the same for every player
+  regardless of screen), and `UI_SCALE`/`TOUCH_UI_SCALE` are reserved
+  for genuinely screen-space HUD.
 - The baked pixel art itself (boat, rock, fish, shark, hook — anything
-  `generateTexture()`s a hand-drawn shape) is deliberately **not**
-  regenerated at a smaller resolution; several of those have hand-tuned
-  absolute offsets internally (e.g. the canoe hull's points) that would
-  distort if the drawing math were scaled but the offsets weren't. Instead
-  each sprite is displayed via `.setScale(UI_SCALE)`, which shrinks the
-  already-correct art uniformly with zero risk of warping it, and the
+  `generateTexture()`s a hand-drawn shape) is never regenerated at a
+  different resolution; several of those have hand-tuned absolute
+  offsets internally (e.g. the canoe hull's points) that would distort
+  if the drawing math were scaled but the offsets weren't. Instead each
+  sprite is displayed via `.setScale(WORLD_OBJECT_SCALE)`, and the
   matching Matter physics body (hitbox rectangle, rock's collision
   circle) is separately sized by the same factor so the (invisible)
-  collision area still lines up with the now-smaller sprite.
-- The one exception is the lake background itself (border/beach/grass,
-  baked once at load into a full-screen texture) — border thickness has
-  to actually change for a shorter screen to show more lake, not just
-  look smaller, so `BORDER`/`TOP_BORDER`/`BEACH` are scaled directly.
-  The pine-tree decoration drawn into that ring uses fixed pixel offsets
-  of its own (how far a tree reaches, its spacing) that had to be scaled
-  the same way, otherwise the trees would overflow past a thinner ring
-  into the beach at small sizes.
+  collision area lines up with the sprite.
+- The lake background is a small repeating water tile (a `TileSprite`)
+  plus a land ring (border/beach/grass, with pine trees) drawn directly
+  into the scene rather than baked to a texture — see Screen / world
+  size and the code comments on `createWaterTileTexture()`/
+  `createBorderGraphics()` for why a world this size can't be one
+  baked image the way the old screen-sized lake was (a `WORLD_WIDTH` x
+  `WORLD_HEIGHT` raster texture would be tens of MB, a real risk on
+  lower-end mobile GPUs). Border/beach thickness is a fixed world
+  constant now, not `UI_SCALE`'d, since the border no longer needs to
+  shrink to fit a smaller screen — the screen is just a window into the
+  same-sized-for-everyone world.
 - **`TOUCH_UI_SCALE`**: a second scale factor, used only for the things
   a finger actually has to repeatedly hit — joystick, hook button,
   restart button, the title screen's Controls button. Plain `UI_SCALE`
@@ -445,15 +468,10 @@ the boat contained.
   text label (e.g. "Boat Speed") entirely — the icon alone identifies
   the upgrade. Three stacked elements (icon/label/cost) in a small
   button read as illegible on a phone; two elements (icon/cost) leaves
-  room for a properly-sized icon instead. Since the button row can now
-  be taller than `TOP_BORDER` on a short touch screen, it's allowed to
-  visually spill slightly past the top of the water rather than making
-  `TOP_BORDER` itself grow (which would shrink the lake for everyone,
-  touch or not, just to make room for a HUD element). The row's
-  Graphics/icon/text are given `DEPTH_TOUCH_UI` so a fish or boat
-  passing underneath renders behind the buttons instead of in front —
-  needed now that the row can genuinely overlap the water, unlike
-  before when it always stayed entirely inside the border.
+  room for a properly-sized icon instead. (This used to also need a
+  note about the row spilling past a HUD-reserved border on a short
+  screen — moot now that the HUD is a fixed screen overlay with no
+  world border behind it at all, see Camera and minimap.)
 
 ## Out of scope for MVP (future ideas)
 - More upgrades beyond the four above.
@@ -463,9 +481,6 @@ the boat contained.
   instead of independent copies.
 - Syncing what's *on* a remote hook (a caught fish/shark riding it home
   currently shows as a bare hook to other players).
-- A single fixed logical world scaled to every screen, so relative
-  distances are identical for every player regardless of their screen's
-  aspect ratio (see the trade-off noted under Multiplayer).
 - Smoothing/interpolating remote boat movement between network updates
   instead of snapping directly to the latest reported position.
 - A more authoritative/anti-cheat-resistant battling model (currently
@@ -476,9 +491,17 @@ the boat contained.
   the boat instead of just damaging it) or other boats as obstacles.
 - Day/night cycle or weather affecting water appearance.
 - Sound effects (paddle splash, ambient lake sounds) and music.
-- Camera/zoom, or a larger world with scrolling instead of a single screen.
+- Optical camera zoom (currently 1x always — see Camera and minimap;
+  the "zoomed in" feeling comes from the world being bigger than the
+  viewport, not from magnifying anything).
+- Fish/rocks/driftwood on the minimap (currently just the world
+  boundary and player dots, by design — see Camera and minimap).
+- Every player currently spawns at the exact same world coordinate
+  (see Hazards' spawn note) — harmless since they scatter as soon as
+  anyone moves, but a small randomized spawn offset would avoid
+  multiple players starting stacked exactly on top of each other.
 - Proper lake-shaped collision (currently a rectangle inset from the
-  screen edges, not a natural lake silhouette).
+  world edges, not a natural lake silhouette).
 - Score, objectives, or a proper win condition.
 - More hazards (multiple rocks, moving obstacles).
 - Anything beyond "sink and restart" at 0% health (e.g. a death
@@ -513,20 +536,62 @@ every control it names is keyboard-or-mouse only and it otherwise
 overlaps the lake on a short screen.
 
 ## Screen / world size
-- Game resolution matches the actual browser window size at load time
-  (`window.innerWidth`/`innerHeight`), not a fixed canvas. It genuinely
-  fills the screen — no letterbox bars, no cropping — because the
-  lake, land border, HUD, and every spawn position are already
-  computed from WIDTH/HEIGHT rather than hardcoded, so the whole world
-  scales to whatever window it loads into.
-- Land border thickness: 50px on left/right/bottom, 100px on top
-  (reserved for the HUD) — fixed pixel thickness regardless of window size.
+- **Viewport vs. world**: `WIDTH`/`HEIGHT` (the actual browser window
+  size at load, `window.innerWidth`/`innerHeight`) is the *viewport* —
+  what this player can see. It no longer doubles as the lake's size.
+  The canvas genuinely fills the screen either way — no letterbox
+  bars, no cropping.
+- **World**: a single fixed lake size, `WORLD_WIDTH` x `WORLD_HEIGHT`
+  (~4200x2800 — `WORLD_REFERENCE_W/H` times `WORLD_SIZE_MULTIPLIER`,
+  currently 3.5x), the same for every player regardless of their own
+  screen. This is what makes the .io-game feel possible (see Camera
+  below) and is also what let multiplayer position sync stay exactly
+  as it was — see Multiplayer.
+- Land border thickness: 60px, equal on all four sides now. The old
+  version had a taller top border specifically to reserve space for
+  the HUD baked into the lake texture itself; the HUD is a genuine
+  screen-space overlay now (see Camera below), so that reason is gone.
+- World-space sizes (boat, hitbox, rocks, driftwood, hook range, fish,
+  health bar, etc.) are all **fixed constants**, the same for every
+  player — see `WORLD_OBJECT_SCALE` in the code. Previously these used
+  `UI_SCALE` (shrinking to fit a short screen) because the world *was*
+  the screen; now the world is a fixed size everyone shares, so there's
+  nothing to shrink to fit. `UI_SCALE`/`TOUCH_UI_SCALE` still exist and
+  are still used, but only for genuinely screen-space HUD (buttons,
+  joystick, text, nickname input, title screen).
 - Trade-off: sizing happens once at load. Resizing the browser window
   afterward doesn't live-resize the game; reloading the page does. On
   a touch device that loaded in portrait, rotating to landscape
   triggers exactly that reload automatically (see Mobile / touch
   controls above) so this trade-off doesn't leave the game stuck at
   the wrong shape.
+
+## Camera and minimap
+- The camera follows the boat around the world (`Phaser.Cameras.Scene2D`,
+  `startFollow` with a small lerp for smooth trailing rather than a
+  rigid snap), clamped to the world's bounds — .io-game style: the
+  player sees only a zoomed-in slice of a much bigger lake, not the
+  whole thing at once. There's deliberately **no optical zoom**
+  (`camera.zoom` stays 1) — the "zoomed in" feeling comes purely from
+  the world being bigger than the viewport, not from magnifying
+  anything, so boat size, hitboxes, and hook range all read exactly as
+  they did before this existed.
+- The HUD (fish count, upgrade shop, joystick, hook button, restart
+  button, minimap) is pinned to the screen via Phaser's
+  `setScrollFactor(0)` on every HUD element, so it stays fixed in place
+  while the world scrolls underneath rather than panning away with the
+  camera.
+- **Minimap**: top-right, stacked below the upgrade-shop row (clear of
+  the touch joystick/hook button in the bottom corners). Deliberately
+  minimal — the world's boundary plus one dot per player (yours vs.
+  everyone else's, in different colors), no fish/rocks/driftwood.
+  Hand-drawn (a `Graphics` object cleared and redrawn every frame from
+  live positions, the same pattern already used for the health bar and
+  hook-range circle) rather than a second Phaser camera — a
+  camera-based minimap would need an explicit "ignore" list of every
+  other game object to hit that same minimal scope; drawing exactly
+  what's wanted directly is simpler and has no such list to keep in
+  sync as new object types get added later.
 
 ## Backend
 - Firebase Realtime Database (free tier), used purely for player-state

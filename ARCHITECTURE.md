@@ -40,18 +40,24 @@ bundler (e.g. Vite) to serve them.
 ## How the current code works
 - **`MainScene`** is the only Phaser Scene.
 - **`preload()`** doesn't load any image files. Instead it procedurally
-  draws the lake background and the canoe sprite using
-  `Phaser.GameObjects.Graphics`, then bakes each into a texture with
-  `generateTexture()`. This keeps the MVP asset-free while still
-  looking intentional. Swapping these for hand-drawn art later just
-  means loading images in `preload()` instead — the rest of the code
-  doesn't change.
-- **`create()`** places the background image, spawns the boat as a
-  Matter Physics sprite, and — importantly — sets the **physics world
-  bounds** to be inset from the canvas edges by the land-border
-  thickness. Matter models this as static invisible walls around that
-  inset rectangle, which is what stops the boat from ever driving onto
-  land — no manual clamping code needed.
+  draws most sprites (canoe, rock, fish, shark, hook, driftwood, a small
+  repeating water tile) using `Phaser.GameObjects.Graphics`, then bakes
+  each into a texture with `generateTexture()`. This keeps the MVP
+  asset-free while still looking intentional. Swapping these for
+  hand-drawn art later just means loading images in `preload()` instead
+  — the rest of the code doesn't change. The land border/beach/grass
+  ring is the one exception — see Lake background layering below for
+  why that one is drawn live instead of baked.
+- **`create()`** places the water `TileSprite` and border `Graphics`,
+  spawns the boat as a Matter Physics sprite, and — importantly — sets
+  the **physics world bounds** to be inset from the *world's* edges
+  (`WORLD_WIDTH`/`WORLD_HEIGHT`, not the browser window) by the
+  land-border thickness. Matter models this as static invisible walls
+  around that inset rectangle, which is what stops the boat from ever
+  driving onto land — no manual clamping code needed. It also sets up
+  the main camera to follow the boat around that same world — see the
+  Camera and minimap section of GAME_DESIGN.md for why the world is a
+  fixed size independent of the browser window at all.
 - **`update()`** reads WASD state every frame, computes a normalized
   velocity vector (so diagonal movement isn't faster than
   straight-line movement), applies it, and rotates the boat to face
@@ -142,13 +148,27 @@ bundler (e.g. Vite) to serve them.
   bouncing from a rock straight into driftwood can't double-dip.
 
 ## Lake background layering
-`createLakeTexture()` builds the shoreline from the outside in:
-grass (with trees near the outer edge) → sand beach ring → water. Each
-layer is just a filled rect drawn after the previous one, sized a bit
-smaller each time, so later layers naturally paint over the earlier
-ones without needing a "ring" shape. `BORDER` is the full grass+beach
-depth (used for the physics water bounds); `BEACH` is how much of that
-is sand.
+Two pieces, both sized to the world (`WORLD_WIDTH`/`WORLD_HEIGHT`), not
+the browser window:
+- `createWaterTileTexture()` bakes a small (128x128) repeating tile
+  with the wave-ripple pattern, used via a `TileSprite` sized to the
+  whole world. A single texture baked at the world's actual size would
+  be tens of MB of GPU memory — a real risk on lower-end mobile — so
+  the repeating pattern is tiled instead of rasterized once at full size.
+- `createBorderGraphics()` draws the land ring (grass with pine trees,
+  then a sand beach ring) as four explicit strips per layer (top/
+  bottom/left/right) directly into the scene, *not* baked with
+  `generateTexture()` like every other texture in this file — same
+  memory reasoning as the water, and unlike the water's ripples this
+  content is a modest, one-time number of shapes (a few hundred grass
+  patches/trees/sand speckles), cheap enough to redraw live. It's built
+  as explicit ring strips rather than "fill the whole world with grass,
+  then let something paint over the middle" the way the old
+  screen-sized version worked, since the water is a separate object
+  now and filling underneath it would be wasted, invisible work.
+`BORDER` is the full grass+beach depth (used for the physics water
+bounds and now equal on all four sides — see GAME_DESIGN.md's Screen /
+world size); `BEACH` is how much of that is sand.
 
 ## Adding a new mechanic — suggested pattern
 1. Add a line to `GAME_DESIGN.md` describing the mechanic and its scope.

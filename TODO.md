@@ -622,7 +622,111 @@
       panel still opens/closes correctly, hiding and restoring the
       nickname input as expected.
 
+## Done (v29)
+- [x] **Big pivot, requested by the user**: the game now feels closer to
+      agar.io/slither.io — a camera follows the boat around a world
+      significantly bigger than any one screen (`WORLD_WIDTH`/
+      `WORLD_HEIGHT`, ~4200x2800, a fixed size shared by every player
+      independent of their own window), rather than the whole lake
+      always being visible at once. A minimap (top-right, below the
+      upgrade shop) shows the world's boundary plus a dot for every
+      player so you can still see where you and everyone else are.
+      Deliberately no optical camera zoom, per the user's choice — the
+      "zoomed in" feeling comes purely from the world being bigger than
+      the viewport; boat size, hitboxes, and hook range all stay
+      pixel-identical to before.
+- [x] The whole `WIDTH`/`HEIGHT`-as-world-size assumption this game was
+      built on since day one is gone: `WIDTH`/`HEIGHT` are now purely
+      the viewport (used only for HUD placement), and every world-space
+      size (boat, hitboxes, rocks, driftwood, hook range, fish, health
+      bar) switched from the old per-viewer `UI_SCALE` to a fixed
+      `WORLD_OBJECT_SCALE` (always 1) — the world and everything in it
+      is the same size for every player now, not shrunk to fit each
+      player's own screen. `UI_SCALE`/`TOUCH_UI_SCALE` still exist,
+      narrowed to genuinely screen-space HUD only.
+- [x] A real correctness fix fell out of this: remote boats/hooks
+      previously rendered at the *viewer's own* `UI_SCALE` (already
+      flagged in an old comment as "a per-viewer choice, not synced")
+      — now they render at the same fixed `WORLD_OBJECT_SCALE` as your
+      own boat, a real synced size instead of an approximation.
+- [x] Multiplayer position sync needed **no code changes** — a nice
+      confirmation of how it was built. It already synced as a fraction
+      of the lake specifically because every player's lake used to be a
+      different size; now that the world is one fixed size for
+      everyone, the same fraction math (`toLakeFraction`/
+      `fromLakeFraction`) keeps working unchanged, and it incidentally
+      fixed a previously-documented trade-off (relative distances
+      weren't perfectly identical across differently-shaped screens)
+      for free, since every player now shares the literal same world.
+- [x] Driftwood switched from a fixed crossing *time* to a fixed
+      crossing *speed* (`DRIFTWOOD_SPEED`, world px/sec) — with a world
+      ~3.5x bigger per axis, a fixed time would have made driftwood
+      cross it just as fast as it used to cross the old screen-sized
+      one, i.e. noticeably faster in absolute terms. Also added more
+      rocks (5→12) and driftwood (2→4), and raised the fish/shark caps
+      (10→30, 2→5) so the ~12x bigger world doesn't feel emptier.
+- [x] The lake background (previously one `Graphics.generateTexture()`
+      baked at screen size) had to change — baking that at the world's
+      actual size would be a raster texture tens of MB in size, a real
+      risk on lower-end mobile GPUs. Water is now a small repeating
+      tile via `TileSprite`; the land/beach/grass ring is drawn live
+      (not baked) directly into the scene, since unlike the water's
+      ripples it's a modest, one-time number of shapes. Border
+      thickness is symmetric on all sides now and a fixed world
+      constant — the old taller top border existed only to reserve
+      space for the HUD, and the HUD is a genuine screen-space overlay
+      now (every HUD element uses `setScrollFactor(0)` so it stays
+      fixed while the world scrolls underneath).
+- [x] Minimap is hand-drawn (a `Graphics` object redrawn every frame
+      from live positions, the same pattern already used for the health
+      bar and hook-range circle), not a second Phaser camera — the
+      scope is deliberately minimal (boundary + player dots only, no
+      fish/rocks/driftwood, per the user's choice), and a camera-based
+      minimap would need an explicit "ignore" list of every other game
+      object to hit that same scope; drawing exactly what's wanted
+      directly has no such list to maintain as new object types get
+      added later.
+- [x] Planned with the user before writing any code, given the size of
+      the change (touches nearly every subsystem) — see the questions
+      asked about world size, optical zoom, and minimap scope, all
+      reflected in the choices above.
+- [x] Verified thoroughly via direct state inspection rather than just
+      watching it play out, since this session's Browser pane hit its
+      well-known "reports visible but `requestAnimationFrame` never
+      fires" quirk partway through (confirmed independently of any of
+      this session's code — even a freshly-scheduled, unrelated `rAF`
+      callback never ran). Worked around it by calling
+      `camera.preRender()` directly in a loop to force the follow-lerp
+      to converge deterministically instead of waiting on the frozen
+      loop: confirmed the camera clamps exactly to the world's bounds
+      at the boat's spawn corner, and converges to *exactly* the boat's
+      position (matched to sub-pixel precision) once far enough from
+      any edge to be unclamped. Also confirmed live: correct rock/
+      driftwood counts, positions, and (for a rotated piece) body angle;
+      the minimap's dot position and world-boundary aspect ratio match
+      the math exactly; and a full two-tab multiplayer test (existing
+      distinct-`playerId` methodology) showing a remote boat at the
+      exact synced world position, at the correct fixed scale, as a
+      correctly-colored second dot on the minimap. No console errors
+      throughout. What this session could *not* verify — genuine touch
+      input against the new camera-relative HUD, and real-device
+      memory/performance of the new tiled-water/live-border background
+      — needs a real-phone look, flagged below.
+
 ## Next up (pick based on what you want most)
+- [ ] Real-phone check specifically for this session's world/camera/
+      minimap change: touch controls still feel right now that the
+      camera scrolls under a fixed HUD, and the new tiled-water +
+      live-border background doesn't cost noticeable memory/FPS on a
+      lower-end phone (this session verified the logic thoroughly via
+      direct state inspection, but couldn't watch it run smoothly over
+      time — see this version's notes for why)
+- [ ] Optical camera zoom was deliberately left out this round (world
+      got bigger instead) — revisit if the game still doesn't feel
+      "zoomed in" enough once you've tried it
+- [ ] A small randomized spawn offset — every player currently spawns
+      at the exact same world coordinate, harmless but means multiple
+      players start stacked exactly on top of each other
 - [ ] Get real-phone confirmation that v18's scale fix, v19's restart
       button, v20's cross-device sync + visible hooks, v21's Controls
       panel, v22's bigger touch targets + unstuck Controls button, and
