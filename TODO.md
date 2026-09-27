@@ -942,6 +942,49 @@
       still-existing shared pool instead of re-populating from scratch.
       No console errors in either tab throughout. `node --check` passed.
 
+## Done (v36)
+- [x] Fixed a real cross-device bug found testing v35 (a phone and a
+      computer playing at the same time): driftwood rendered in visibly
+      different places on each device. Root cause: driftwood's (and
+      fish's) "zero ongoing network traffic" sync computes position from
+      `Date.now()`, which silently assumed every device's clock reads
+      the same real moment — true enough for two browser tabs sharing
+      one computer's system clock (all that had been tested), false
+      across genuinely different physical devices, which can disagree by
+      real seconds.
+- [x] Added `serverNow()`, next to the Firebase init: `Date.now()`
+      corrected by Firebase's own `.info/serverTimeOffset` (a live path
+      giving this client's clock's difference from the server's).
+      `updateDriftwood()`, `updateFish()`, and `pushSwimmer()`'s
+      `spawnTime` all switched from raw `Date.now()` to `serverNow()`,
+      so every device's own clock bias cancels out of the elapsed-time
+      formulas instead of compounding into a visible position mismatch.
+- [x] Also fixed, in the same pass since it touches overlapping code:
+      remote player boats snapping directly to each new synced position
+      (~10x/sec) instead of moving smoothly, reported as choppy.
+      `updateRemoteBoat()` now only records a target position/rotation;
+      a new per-frame `updateRemoteBoatVisuals()` eases the sprite
+      toward it (`Phaser.Math.Linear` for position, the angle-aware
+      `Phaser.Math.Angle.RotateTo` for rotation so a boat turning past
+      +-180 degrees takes the short way around) and redraws the
+      label/health bar/hook-rope from the sprite's current eased
+      position each frame, so they stay visually attached to the
+      gliding boat instead of jumping ahead of it.
+- [x] Verified via direct scene inspection: forced a nonzero
+      `serverTimeOffset` and confirmed `updateDriftwood()`/`updateFish()`
+      positions shift accordingly, proving the call sites genuinely use
+      it; a real two-tab test computed driftwood's position in both tabs
+      at the same `serverNow()` instant and got movement that exactly
+      matched `DRIFTWOOD_SPEED * elapsed` (188.9px for a 3.778s gap in
+      both, to the same decimal), confirming both tabs now agree via the
+      corrected clock. For the boat smoothing, patched
+      `updateRemoteBoatVisuals()` to log samples and captured a real
+      cross-tab position sync: the remote sprite eased 2500 to 500 over
+      many frames, closing ~25% of the remaining distance each step
+      (2500, 2000, 1625, 1343.75, ...), not snapping; confirmed the
+      label stayed pixel-matched to the sprite's x throughout. No
+      console errors in either tab. `node --check` passed throughout.
+
 ## Next up (pick based on what you want most)
 - [ ] Different kinds of fish, each with its own swim pattern and speed
       (e.g. faster/skittish vs. slower/lazy, or a non-circular pattern)

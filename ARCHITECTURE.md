@@ -130,10 +130,12 @@ bundler (e.g. Vite) to serve them.
   technique for a "kinematic" obstacle: a body with infinite mass that
   the *game* moves directly rather than the physics solver, but that
   dynamic bodies (the boat) still collide with correctly at wherever
-  it currently is. Its position is computed from `Date.now()` (wall
-  clock), not elapsed scene time — see DRIFTWOOD_CONFIGS' comment and
-  GAME_DESIGN.md's Multiplayer section for why that's what keeps it
-  synced across every player without any network traffic.
+  it currently is. Its position is computed from `serverNow()` (wall
+  clock, corrected for this device's clock skew against Firebase's own
+  — see the `.info/serverTimeOffset` note near the Firebase init and
+  GAME_DESIGN.md's Multiplayer section), not elapsed scene time — that's
+  what keeps it synced across every player without any network traffic
+  for its own position data.
 - We listen for `this.matter.world.on('collisionstart', ...)` and,
   inside the pair list, check whether the boat and *any* hazard body
   (every rock's and every driftwood piece's body, collected into one
@@ -164,9 +166,10 @@ identical result independently, not the result itself:
   sync with itself.
 - `updateFish()` computes each swimming fish's position every frame as
   `orbitAngle0 + dir * FISH_ANGULAR_SPEED * (elapsed since spawnTime)`,
-  the same wall-clock-deterministic formula `updateDriftwood()` already
-  used — not an accumulated `angle += ...` step, which would let two
-  clients' fish drift apart under different frame rates.
+  measured via `serverNow()` — the same wall-clock-deterministic formula
+  `updateDriftwood()` already used — not an accumulated `angle += ...`
+  step, which would let two clients' fish drift apart under different
+  frame rates.
 - `catchFish()` claims a fish by deleting its `/fish/{id}` record.
   `removeFish()` (the `child_removed` handler) has to special-case one
   thing: when *you* catch a fish, this fires for your own delete almost
@@ -180,6 +183,55 @@ identical result independently, not the result itself:
   also delete the `/fish` data the way a player's own `/players` record
   is removed — fish aren't owned by any one player, so one player
   restarting must never wipe the shared lake for everyone else.
+
+## Clock-skew correction (`serverNow()`)
+Every "compute position from wall-clock time" trick above (driftwood,
+fish) assumed every device's clock reads the same real moment. That
+held for two browser tabs sharing one computer's system clock, but not
+across genuinely different devices — confirmed by a real phone and
+computer rendering the same drifting log in visibly different places.
+`serverNow()` (defined right next to the Firebase init, at module scope
+so it's available before any scene exists and survives restarts) is
+`Date.now()` corrected by `.info/serverTimeOffset`, a live Firebase path
+giving this client's own clock's difference from the server's. Every
+device's own bias cancels out once both a spawn timestamp and the "now"
+used to compute elapsed time are measured against that same corrected
+frame — `updateDriftwood()` and `updateFish()` use it for "now", and
+`pushSwimmer()` uses it for a new fish's `spawnTime`. This is the only
+place these otherwise-zero-Firebase-traffic sync tricks read anything
+from Firebase at all — one small live value, not driftwood/fish's own
+position data. `serverTimeOffset` starts at 0 and self-corrects within
+about a second of connecting; a brief startup transient, not worth
+guarding against.
+
+## Remote boat smoothing
+`updateRemoteBoat()` used to snap a remote boat's sprite directly to
+each new synced position/rotation (`child_changed` fires roughly every
+`NETWORK_SYNC_INTERVAL_MS` = 100ms) — visibly choppy. It now only
+records the synced value as `remote.targetX/targetY/targetRotation`; a
+new per-frame `updateRemoteBoatVisuals()` (called from `update()`) eases
+the sprite toward those targets every frame instead:
+- Position uses `Phaser.Math.Linear(current, target, REMOTE_BOAT_LERP)`
+  — a fraction (0.25) of the remaining distance closed per frame, which
+  at 60fps closes most of the gap well within one ~100ms sync interval.
+- Rotation uses `Phaser.Math.Angle.RotateTo(current, target,
+  REMOTE_BOAT_LERP)` instead of `Linear` — it takes the shortest path
+  around the ±180° wrap point, which a plain angle lerp would get wrong.
+  Its third argument isn't a 0-1 fraction like `Linear`'s, though — it's
+  a fixed max radians turned per call, so reusing the same constant
+  means "turn at up to ~0.25 rad/frame" rather than "close 25% of the
+  remaining angle." In practice small heading adjustments finish in a
+  frame or two and only a sudden, large turn visibly eases in.
+- Everything anchored to "where the boat visually is" — the nickname
+  label, health bar, hook sprite/rope — moved from `updateRemoteBoat()`
+  into `updateRemoteBoatVisuals()` too, now redrawn from the sprite's
+  current *eased* position each frame rather than the raw synced one
+  `updateRemoteBoat()` received — otherwise they'd visibly jump ahead of
+  the now-gliding sprite instead of staying attached to it.
+- `addRemoteBoat()`, `removeRemoteBoat()`, the minimap
+  (`drawMinimap()`), and the hit-detection scan in `updateHook()` needed
+  no changes — they already read `remote.sprite.x/y`/`remote.data`
+  directly, so they pick up the smoothed position for free.
 
 ## Lake background layering
 Two pieces, both sized to the world (`WORLD_WIDTH`/`WORLD_HEIGHT`), not

@@ -344,6 +344,26 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+// Clock-skew correction. Driftwood and fish positions are synced with
+// zero ongoing network traffic by having every client independently
+// compute position from Date.now() plus a small static config — that
+// only works if every device's clock agrees on "now." Two browser tabs
+// on one computer trivially share a system clock (which is why this
+// never surfaced in same-machine testing), but two genuinely different
+// devices (a phone and a computer) can differ by real seconds, which
+// visibly desyncs the two. .info/serverTimeOffset is a live Firebase
+// path giving this client's clock's own difference from the server's,
+// auto-updated as it drifts — serverNow() is what every wall-clock-
+// deterministic sync formula should use instead of raw Date.now(), so
+// each device's own clock bias cancels out consistently.
+let serverTimeOffset = 0;
+db.ref('.info/serverTimeOffset').on('value', (snap) => {
+  serverTimeOffset = snap.val() || 0;
+});
+function serverNow() {
+  return Date.now() + serverTimeOffset;
+}
+
 // Persisted in localStorage so refreshing the page keeps controlling the
 // same boat instead of spawning a new ghost every reload.
 let playerId = localStorage.getItem('playerId');
@@ -353,6 +373,13 @@ if (!playerId) {
 }
 
 const NETWORK_SYNC_INTERVAL_MS = 100; // ~10 updates/sec written to Firebase
+const REMOTE_BOAT_LERP = 0.25; // used for both position and rotation smoothing in
+// updateRemoteBoatVisuals(), but means something different for each: for position
+// (Phaser.Math.Linear) it's the fraction of remaining distance closed per frame — at 60fps vs. a
+// ~100ms (NETWORK_SYNC_INTERVAL_MS) sync interval, that closes ~88% of the gap between updates,
+// smoothing the visible snap into a glide without feeling laggy. For rotation
+// (Phaser.Math.Angle.RotateTo) it's a fixed max radians turned per frame instead of a fraction —
+// see the comment at that call site.
 const REMOTE_LABEL_OFFSET_Y = 20; // nickname (or "Player" if none set) label above a remote boat — world-space, matches the fixed boat size
 // A nickname is information a player actually needs to read, not just
 // decorative HUD chrome — so on touch it starts from a bigger base
@@ -1258,42 +1285,75 @@ class MainScene extends Phaser.Scene {
     this.updateRemoteBoat(id, data);
   }
 
+  // Only records where the boat should end up (this.remoteBoats[id].target*)
+  // rather than snapping the sprite there directly — updateRemoteBoatVisuals()
+  // glides the sprite toward those targets every frame instead, since a raw
+  // snap on every ~100ms sync (NETWORK_SYNC_INTERVAL_MS) reads as choppy.
   updateRemoteBoat(id, data) {
     const remote = this.remoteBoats[id];
     if (!remote) { this.addRemoteBoat(id, data); return; }
     const pos = this.fromLakeFraction(data.nx, data.ny);
     if (!pos) return; // leave the boat where it was rather than jumping it somewhere invalid
-    remote.data = data; // last-known state, read by the hit-detection check in updateHook()
+    remote.data = data; // last-known state, read by the hit-detection check in updateHook() and drawMinimap()
     remote.sprite.setTexture(data.sunk ? 'sunkTexture' : 'canoeTexture');
-    remote.sprite.setPosition(pos.x, pos.y);
-    remote.sprite.rotation = data.rotation || 0;
+    remote.targetX = pos.x;
+    remote.targetY = pos.y;
+    remote.targetRotation = data.rotation || 0;
     remote.label.setText(data.nickname || 'Player');
-    remote.label.setPosition(pos.x, pos.y - REMOTE_LABEL_OFFSET_Y);
+  }
 
-    const g = remote.healthBarGraphics;
-    g.clear();
-    if (!data.sunk) {
-      const pct = (data.health != null ? data.health : MAX_HEALTH) / MAX_HEALTH;
-      const barX = pos.x - HEALTH_BAR_WIDTH / 2;
-      const barY = pos.y + HEALTH_BAR_OFFSET_Y;
-      g.fillStyle(0x2b2b2b, 0.7);
-      g.fillRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
-      const fillColor = pct > 0.5 ? 0x4caf50 : (pct > 0.25 ? 0xf0ad4e : 0xd9534f);
-      g.fillStyle(fillColor, 1);
-      g.fillRect(barX, barY, HEALTH_BAR_WIDTH * pct, HEALTH_BAR_HEIGHT);
-      g.lineStyle(1, 0x111111, 0.9);
-      g.strokeRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
-    }
+  // Runs every frame (called from update()): glides each remote boat's
+  // sprite toward the target position/rotation updateRemoteBoat() set on
+  // its last sync, then redraws everything anchored to "where the boat
+  // visually is right now" — label, health bar, hook/rope — from the
+  // sprite's current (smoothed) position rather than the raw synced one,
+  // so they stay visually attached to the gliding sprite instead of
+  // jumping ahead of it.
+  updateRemoteBoatVisuals() {
+    for (const id in this.remoteBoats) {
+      const remote = this.remoteBoats[id];
+      if (remote.targetX == null) continue; // no sync received yet
+      const sprite = remote.sprite;
+      sprite.x = Phaser.Math.Linear(sprite.x, remote.targetX, REMOTE_BOAT_LERP);
+      sprite.y = Phaser.Math.Linear(sprite.y, remote.targetY, REMOTE_BOAT_LERP);
+      // Angle-aware, unlike Linear — takes the shortest path around the
+      // wrap point, so a boat turning past +-180 degrees doesn't spin the
+      // long way around. Note RotateTo's 3rd arg isn't a 0-1 fraction like
+      // Linear's — it's a fixed max radians-per-call turn rate, so reusing
+      // REMOTE_BOAT_LERP here means "turn at up to ~0.25 rad/frame" rather
+      // than "close 25% of the remaining angle," which in practice means
+      // small heading adjustments snap almost immediately and only a
+      // sudden, large turn (e.g. an instant reversal) visibly eases in.
+      sprite.rotation = Phaser.Math.Angle.RotateTo(sprite.rotation, remote.targetRotation, REMOTE_BOAT_LERP);
 
-    const hookPos = data.hookOut ? this.fromLakeFraction(data.hookNx, data.hookNy) : null;
-    remote.hookGraphics.clear();
-    if (hookPos && !data.sunk) {
-      remote.hookSprite.setPosition(hookPos.x, hookPos.y);
-      remote.hookSprite.setVisible(true);
-      remote.hookGraphics.lineStyle(2, 0x3a2a1a, 0.8);
-      remote.hookGraphics.lineBetween(pos.x, pos.y, hookPos.x, hookPos.y);
-    } else {
-      remote.hookSprite.setVisible(false);
+      const data = remote.data;
+      remote.label.setPosition(sprite.x, sprite.y - REMOTE_LABEL_OFFSET_Y);
+
+      const g = remote.healthBarGraphics;
+      g.clear();
+      if (!data.sunk) {
+        const pct = (data.health != null ? data.health : MAX_HEALTH) / MAX_HEALTH;
+        const barX = sprite.x - HEALTH_BAR_WIDTH / 2;
+        const barY = sprite.y + HEALTH_BAR_OFFSET_Y;
+        g.fillStyle(0x2b2b2b, 0.7);
+        g.fillRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
+        const fillColor = pct > 0.5 ? 0x4caf50 : (pct > 0.25 ? 0xf0ad4e : 0xd9534f);
+        g.fillStyle(fillColor, 1);
+        g.fillRect(barX, barY, HEALTH_BAR_WIDTH * pct, HEALTH_BAR_HEIGHT);
+        g.lineStyle(1, 0x111111, 0.9);
+        g.strokeRect(barX, barY, HEALTH_BAR_WIDTH, HEALTH_BAR_HEIGHT);
+      }
+
+      const hookPos = data.hookOut ? this.fromLakeFraction(data.hookNx, data.hookNy) : null;
+      remote.hookGraphics.clear();
+      if (hookPos && !data.sunk) {
+        remote.hookSprite.setPosition(hookPos.x, hookPos.y);
+        remote.hookSprite.setVisible(true);
+        remote.hookGraphics.lineStyle(2, 0x3a2a1a, 0.8);
+        remote.hookGraphics.lineBetween(sprite.x, sprite.y, hookPos.x, hookPos.y);
+      } else {
+        remote.hookSprite.setVisible(false);
+      }
     }
   }
 
@@ -1317,12 +1377,12 @@ class MainScene extends Phaser.Scene {
   }
 
   // Moves each driftwood piece to its current wall-clock-time position
-  // (see DRIFTWOOD_CONFIGS above for why Date.now() rather than the
+  // (see DRIFTWOOD_CONFIGS above for why serverNow() rather than the
   // scene's own elapsed time). setPosition() on a Matter game object
   // moves the underlying body too, not just the sprite, so collision
   // detection stays correct even though the body is static.
   updateDriftwood() {
-    const now = Date.now();
+    const now = serverNow();
     for (const dw of this.driftwood) {
       // Crossing time is derived from a fixed world px/sec speed and the
       // dimension this piece actually crosses (LAKE_W or LAKE_H, which
@@ -1448,6 +1508,7 @@ class MainScene extends Phaser.Scene {
 
     this.drawHealthBar();
     this.drawHookRange();
+    this.updateRemoteBoatVisuals();
     this.updateFish();
     this.updateHook(delta);
     this.updateDriftwood();
@@ -1650,7 +1711,7 @@ class MainScene extends Phaser.Scene {
     // uses, and required now that fish are shared: every client must
     // independently compute the exact same position for the exact same
     // fish at a given instant, with no ongoing position sync.
-    const now = Date.now();
+    const now = serverNow();
     for (const fish of this.fish) {
       if (fish.fishState !== 'swimming') continue; // caught fish ride the hook instead, see updateHook()
       const elapsed = (now - fish.spawnTime) / 1000;
@@ -1835,7 +1896,7 @@ class MainScene extends Phaser.Scene {
       cy: Phaser.Math.Between(WATER_TOP + margin, WATER_BOTTOM - margin),
       angle0: Phaser.Math.FloatBetween(0, Math.PI * 2),
       dir: Phaser.Math.Between(0, 1) === 0 ? 1 : -1,
-      spawnTime: Date.now(),
+      spawnTime: serverNow(),
       isShark
     });
   }

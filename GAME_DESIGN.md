@@ -348,7 +348,7 @@ the boat contained.
   fresh sink) cleans up and re-registers the same player ID rather than
   leaving a duplicate behind.
 - **Fish and sharks are a shared pool, synced with almost no ongoing
-  network traffic** — the same "compute position from `Date.now()`"
+  network traffic** — the same "compute position from `serverNow()`"
   trick driftwood uses above, applied to something that gets created
   and destroyed instead of just moving forever. Only two events ever
   touch Firebase: a fish's *spawn* (its orbit center, direction,
@@ -377,26 +377,50 @@ the boat contained.
   recovers every other connected player's boat on load. Fish *count*
   (your own catches) is also synced separately (see Battling below),
   purely so opponents know how much they stand to steal.
-- **Rocks and driftwood are synced too, but not through Firebase at
-  all** (see Hazards above for what they look like). Rocks are placed
-  at fixed lake *fractions* — the exact same `nx`/`ny` trick used for
-  player and hook positions above — so every player's independently
-  computed layout lands in the same relative spot without writing
-  anything to the database, since a rock that never moves has nothing
-  to keep in sync at runtime. Driftwood extends the same trick to
-  something moving: its position is a fraction that's a deterministic
-  function of `Date.now()` (wall-clock time) rather than a fixed
-  constant, or "time since this client's own scene started" (which
-  differs by whenever each player happened to load the page or last
-  restart). Every connected player's clock reads roughly the same real
-  moment, so every client computes the exact same position at the
-  exact same instant — sync "for free," no writes, no reads, no
-  latency to hide with interpolation. The trade-off: it only works
-  because driftwood's motion is simple and fully predictable (constant
-  speed, constant direction, no player input involved) — this
-  approach couldn't sync something whose path depends on what a player
+- **Rocks and driftwood are synced too, without writing their own state
+  to Firebase at all** (see Hazards above for what they look like).
+  Rocks are placed at fixed lake *fractions* — the exact same `nx`/`ny`
+  trick used for player and hook positions above — so every player's
+  independently computed layout lands in the same relative spot without
+  writing anything to the database, since a rock that never moves has
+  nothing to keep in sync at runtime. Driftwood extends the same trick
+  to something moving: its position is a fraction that's a deterministic
+  function of `serverNow()` (see below) rather than a fixed constant, or
+  "time since this client's own scene started" (which differs by
+  whenever each player happened to load the page or last restart) — no
+  writes, no reads of driftwood's own data, no latency to hide with
+  interpolation. The trade-off: it only works because driftwood's motion
+  is simple and fully predictable (constant speed, constant direction,
+  no player input involved) — this approach couldn't sync something
+  whose path depends on what a player
   does, the way boats and hooks do, which is exactly why those still
   go through Firebase instead.
+- **`serverNow()`, not raw `Date.now()`, is what driftwood and fish
+  actually use for "now."** Every wall-clock-deterministic formula above
+  assumed every device's clock read the same real moment — true enough
+  for two browser tabs sharing one computer's system clock (which is
+  all that was tested at first), but false across genuinely different
+  devices, confirmed by a real phone and a real computer rendering the
+  same drifting log in visibly different places. Firebase's Realtime
+  Database exposes a live `.info/serverTimeOffset` path — this client's
+  clock's own difference from the server's — and `serverNow()` is just
+  `Date.now()` corrected by that offset. Every device's own bias cancels
+  out of the elapsed-time formulas once both the spawn timestamp and
+  "now" are measured against the same server clock instead of each
+  device's own. This is the one place these "zero ongoing traffic" sync
+  tricks read from Firebase at all — a single small live value, not
+  driftwood/fish's own position data.
+- **Remote boats smoothly interpolate rather than snapping.** Boat
+  positions sync ~10x/sec (`NETWORK_SYNC_INTERVAL_MS`), and directly
+  jumping the sprite to each new position on arrival read as visibly
+  choppy. A synced update now just records a target position/rotation;
+  every frame, the sprite eases toward that target (`Phaser.Math.Linear`
+  for position, the angle-aware `Phaser.Math.Angle.RotateTo` for
+  rotation, so a boat turning past ±180° takes the short way around).
+  Everything anchored to "where the boat visually is" — its nickname
+  label, health bar, hook/rope — is redrawn from the sprite's current
+  eased position each frame too, so it stays visually attached to the
+  gliding boat instead of jumping ahead of it.
 - The Firebase project's Realtime Database is currently running in
   test mode (open read/write, no auth) — fine for a small prototype
   among friends, but worth locking down with real security rules
