@@ -779,6 +779,10 @@
       every object created at runtime — fish, sharks, remote players).
       Flagged below for a real-phone look; a UI camera is the documented
       fallback if the HUD shrink turns out to matter in practice.
+      **Update**: it mattered — a real-phone test showed the HUD visibly
+      misaligned from the screen edges, not just shrunk (zoom scales
+      around the camera's center, so a "fixed" element actually drifts
+      toward the middle, not just shrinks in place). Fixed in v33 below.
 - [x] Verified via direct scene inspection (`window.__debugScene`,
       removed before commit): at the starting `HOOK_RANGE` (125) zoom
       computed as 1 on a normal-sized viewport (and correctly <1 on a
@@ -794,13 +798,51 @@
       smaller at a reduced zoom, HUD icons/text stay legible. `node
       --check` passed throughout.
 
+## Done (v33)
+- [x] Fixed a real bug reported right after a real-phone test of v32: the
+      HUD wasn't just shrinking at reduced zoom, it was visibly
+      misaligned from the screen edges even with no upgrades bought,
+      and badly so after a couple of purchases. Root cause turned out
+      worse than v32's own documented trade-off assumed — Phaser's
+      `setScrollFactor(0)` cancels a camera's *pan* but not its *zoom*,
+      and zoom scales around the camera's *center*, so a "fixed" HUD
+      element on a zoomed main camera doesn't just shrink in place, it
+      visibly drifts toward the center of the screen. That's the
+      misalignment the user saw.
+- [x] Fix: a second camera, `this.uiCamera`, added at the same viewport,
+      permanently at zoom 1 and never scrolled. Every existing HUD
+      element (already marked `.setScrollFactor(0)`, which was already
+      this file's "this is HUD" convention) is claimed exclusively by
+      `uiCamera` via `.ignore()`; everything else is claimed exclusively
+      by `this.cameras.main`. The one-time split for objects that exist
+      from scene start happens once at the end of `create()`, filtering
+      `this.children.list` by `scrollFactorX/Y === 0` — no per-element
+      code changes needed at any of the ~20 existing `.setScrollFactor(0)`
+      call sites. Objects created later at runtime aren't covered by that
+      one-time split, so `spawnSwimmer()` (fish/sharks) and
+      `addRemoteBoat()` (remote players) each call `uiCamera.ignore()` on
+      their own new objects right after creating them.
+- [x] One knock-on fix this required: `pointer.worldX/worldY` reflect
+      whichever camera Phaser most recently hit-tested the pointer
+      against, and with two overlapping full-screen cameras that's no
+      longer reliably the main one. The desktop click-to-cast handler now
+      calls `this.cameras.main.getWorldPoint(pointer.x, pointer.y)`
+      explicitly instead of trusting the ambient `pointer.worldX/Y`.
+- [x] Verified via direct scene inspection (`window.__debugScene`,
+      removed before commit) and screenshots at multiple zoom levels:
+      confirmed the upgrade shop row, minimap, and fish-count box stay
+      flush against the screen edges at both zoom 1 and the 0.5 floor
+      (previously drifted toward center); confirmed a *real* click on the
+      Hook Range button correctly registered through the new two-camera
+      setup (`hookRange` and fish count both updated correctly); proved
+      the `pointer.worldX/Y` risk concretely by simulating Phaser
+      updating the pointer against each camera in turn — against
+      `uiCamera` it read back raw screen coordinates (wrong), against
+      `main` (and via the new explicit `getWorldPoint()` call) it matched
+      the correct scrolled/zoomed world position. `node --check` passed
+      throughout.
+
 ## Next up (pick based on what you want most)
-- [ ] If a real-phone look at v32 shows the HUD shrinking too much at
-      max zoom-out (floor 0.5), add a dedicated UI camera so the HUD
-      stays a fixed screen size regardless of world zoom — bigger change
-      (needs "which objects belong to which camera" bookkeeping for
-      every object created at runtime: fish/sharks via spawnSwimmer(),
-      remote players via addRemoteBoat()), so deferred unless needed
 - [ ] Different kinds of fish, each with its own swim pattern and speed
       (e.g. faster/skittish vs. slower/lazy, or a non-circular pattern)
       instead of every fish/shark sharing one orbit behavior — requested

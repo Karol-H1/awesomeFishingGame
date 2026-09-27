@@ -792,6 +792,18 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.boat, true, 0.08, 0.08);
     this.updateRangeZoom(false); // set correctly from the start, in case a short screen ever needs it at base HOOK_RANGE too
 
+    // A second, fixed camera dedicated to the HUD. Scroll factor only
+    // cancels a camera's *pan*, not its *zoom* — so a scrollFactor(0) HUD
+    // element on the main camera still shrinks AND drifts toward the
+    // screen center once that camera zooms out (see updateRangeZoom()),
+    // which is exactly the "HUD doesn't line up with the edges" bug this
+    // fixes. This camera never scrolls or zooms, so anything shown only
+    // through it stays pinned to literal screen pixels regardless of what
+    // the main camera is doing. Everything already marked
+    // .setScrollFactor(0) is claimed by this camera (see the ignore-list
+    // split at the end of create()) — no per-element changes needed there.
+    this.uiCamera = this.cameras.add(0, 0, WIDTH, HEIGHT);
+
     // Rocks scattered across the lake (see ROCK_POSITIONS). Static —
     // they never move — but still need a physics body to collide with.
     // A circular body suits a round rock better than a rectangle would.
@@ -919,7 +931,12 @@ class MainScene extends Phaser.Scene {
         // fixed screen overlay now, not part of the scrolling world, so
         // it no longer corresponds to any particular world coordinate.
         if (pointer.y < TOP_HUD_HEIGHT) return; // clicks on the HUD strip shouldn't cast the hook
-        this.castHookToward(pointer.worldX, pointer.worldY);
+        // pointer.worldX/worldY reflect whichever camera Phaser most
+        // recently hit-tested the pointer against — with two overlapping
+        // full-screen cameras (see uiCamera above) that's not reliably
+        // the main camera, so ask it directly for the cast target instead.
+        const target = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        this.castHookToward(target.x, target.y);
       });
     }
 
@@ -1020,6 +1037,20 @@ class MainScene extends Phaser.Scene {
     // createMinimap()/drawMinimap() for why it's hand-drawn rather than
     // a second Phaser camera.
     this.createMinimap();
+
+    // Split every current child between the two cameras: anything already
+    // marked screen-fixed (.setScrollFactor(0), the existing "this is HUD"
+    // marker in this file) belongs only to uiCamera; everything else
+    // (boat, background, obstacles, fish, the local hook/health bar/range
+    // circle) belongs only to the world-following main camera. Objects
+    // created later at runtime (fish/sharks via spawnSwimmer(), remote
+    // players via addRemoteBoat()) aren't covered by this one-time split —
+    // each of those calls its own uiCamera.ignore() right after creating
+    // its objects instead.
+    const hudObjects = this.children.list.filter(o => o.scrollFactorX === 0 && o.scrollFactorY === 0);
+    const worldObjects = this.children.list.filter(o => !(o.scrollFactorX === 0 && o.scrollFactorY === 0));
+    this.cameras.main.ignore(hudObjects);
+    this.uiCamera.ignore(worldObjects);
 
     this.setupMultiplayer();
   }
@@ -1132,6 +1163,9 @@ class MainScene extends Phaser.Scene {
     hookSprite.setDepth(DEPTH_BOAT);
     hookSprite.setVisible(false);
     const hookGraphics = this.add.graphics();
+
+    // World objects spawned after create()'s one-time HUD/world camera split.
+    this.uiCamera.ignore([sprite, label, healthBarGraphics, hookSprite, hookGraphics]);
 
     this.remoteBoats[id] = { sprite, label, healthBarGraphics, hookSprite, hookGraphics };
     this.updateRemoteBoat(id, data);
@@ -1705,6 +1739,7 @@ class MainScene extends Phaser.Scene {
     swimmer.setTint(FISH_SUBMERGED_TINT);
     swimmer.setAlpha(FISH_SUBMERGED_ALPHA);
     swimmer.setDepth(DEPTH_FISH);
+    this.uiCamera.ignore(swimmer); // world object spawned after create()'s one-time HUD/world camera split
 
     this.fish.push(swimmer);
     return swimmer;

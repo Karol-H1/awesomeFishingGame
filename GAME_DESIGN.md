@@ -589,28 +589,48 @@ overlaps the lake on a short screen.
   that keeps the circle inside the smaller screen dimension (with a
   margin), floored at `MIN_RANGE_ZOOM` (0.5) so a heavily upgraded
   player doesn't zoom the whole game out to nothing. It eases in via
-  Phaser's `Camera.zoomTo()` whenever Hook Range is purchased. Since
-  every HUD element shares the same main camera (no dedicated UI
-  camera), the HUD shrinks by that same modest factor when this
-  triggers — an accepted trade-off given the zoom is meant to be slight;
-  a dedicated UI camera is the documented fallback if that turns out to
-  matter on a real device (see TODO.md).
+  Phaser's `Camera.zoomTo()` whenever Hook Range is purchased.
+- **Two cameras**: `this.cameras.main` follows the boat and is the only
+  one that ever zooms; `this.uiCamera` is a second camera added at the
+  same viewport, permanently at zoom 1 and never scrolled, dedicated to
+  the HUD. This exists because Phaser's `setScrollFactor(0)` only
+  cancels a camera's *pan*, not its *zoom* — a scrollFactor(0) object on
+  a single zoomed camera still shrinks *and* drifts toward the screen
+  center (zoom scales around the camera's center), which broke HUD edge
+  alignment the first time range-triggered zoom shipped. Every HUD
+  element (fish count, upgrade shop, joystick, hook button, restart
+  button, minimap) is claimed by `uiCamera` and hidden from `main`;
+  everything else is the reverse. The split for objects that exist from
+  the start happens once in `create()`, keyed off `.setScrollFactor(0)`
+  (already the existing "this is HUD" marker in this file); objects
+  created later at runtime (fish/sharks via `spawnSwimmer()`, remote
+  players via `addRemoteBoat()`) call `uiCamera.ignore()` on themselves
+  individually right after creation, since they didn't exist for that
+  one-time split. One knock-on fix this required: `pointer.worldX/Y`
+  reflect whichever camera Phaser last hit-tested the pointer against,
+  which with two overlapping full-screen cameras is no longer reliably
+  the main one — the desktop click-to-cast handler now asks
+  `cameras.main.getWorldPoint(pointer.x, pointer.y)` explicitly instead.
 - The HUD (fish count, upgrade shop, joystick, hook button, restart
   button, minimap) is pinned to the screen via Phaser's
-  `setScrollFactor(0)` on every HUD element, so it stays fixed in place
-  while the world scrolls underneath rather than panning away with the
-  camera (though scroll factor doesn't cancel zoom — see above).
+  `setScrollFactor(0)` on every HUD element (see "Two cameras" above for
+  why that alone isn't sufficient once the camera can zoom), so it stays
+  fixed in place and at a constant size while the world scrolls and
+  zooms underneath.
 - **Minimap**: top-right, stacked below the upgrade-shop row (clear of
   the touch joystick/hook button in the bottom corners). Deliberately
   minimal — the world's boundary plus one dot per player (yours vs.
   everyone else's, in different colors), no fish/rocks/driftwood.
   Hand-drawn (a `Graphics` object cleared and redrawn every frame from
   live positions, the same pattern already used for the health bar and
-  hook-range circle) rather than a second Phaser camera — a
-  camera-based minimap would need an explicit "ignore" list of every
-  other game object to hit that same minimal scope; drawing exactly
-  what's wanted directly is simpler and has no such list to keep in
-  sync as new object types get added later.
+  hook-range circle) rather than rendering a scaled-down view of the
+  world through a third camera — a camera-based minimap would need its
+  own explicit "ignore" list of every other game object to hit that same
+  minimal scope; drawing exactly what's wanted directly is simpler and
+  has no such list to keep in sync as new object types get added later.
+  (It's still just claimed by `uiCamera` like the rest of the HUD, same
+  as everything above — the "no camera" choice here is specifically
+  about not using one to *render the minimap's own content*.)
 
 ## Backend
 - Firebase Realtime Database (free tier), used purely for player-state
