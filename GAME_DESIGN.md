@@ -260,8 +260,12 @@ the boat contained.
   - **Boat Speed** (5 fish): permanently raises boat speed by 15px/sec.
     Repeatable, no cap.
   - **Hook Range** (5 fish): permanently raises the hook's max cast
-    range by 25px. Repeatable, no cap; the faint range circle grows
-    to match immediately.
+    range by 25px; the faint range circle grows to match immediately,
+    and the camera eases out slightly to keep it on screen (see Camera
+    and minimap below). Capped at 6 purchases — past that, even the
+    camera's maximum zoom-out can't keep the circle fully on screen, so
+    the shop stops offering it rather than let the circle start clipping
+    again.
   - **Hook Speed** (5 fish): permanently raises hook cast/return speed
     by 50px/sec. Repeatable, no cap.
 - The row is right-aligned and lays itself out from however many
@@ -581,15 +585,19 @@ overlaps the lake on a short screen.
   mostly comes from the world being bigger than the viewport, not from
   magnifying anything.
 - **Range-triggered zoom-out**: the one exception to "no optical zoom."
-  The Hook Range upgrade (see Upgrade shop below) is repeatable with no
-  cap, and its faint range circle is drawn in world pixels — on a world
+  The Hook Range upgrade (see Upgrade shop below) grows `this.hookRange`,
+  and its faint range circle is drawn in world pixels — on a world
   bigger than the viewport, a big enough range eventually runs the
   circle off the edge of the screen, worst on mobile where the viewport
   is smallest. `updateRangeZoom()` solves directly for the camera zoom
   that keeps the circle inside the smaller screen dimension (with a
-  margin), floored at `MIN_RANGE_ZOOM` (0.5) so a heavily upgraded
-  player doesn't zoom the whole game out to nothing. It eases in via
-  Phaser's `Camera.zoomTo()` whenever Hook Range is purchased.
+  margin), floored at `MIN_RANGE_ZOOM` (0.5) so a heavily upgraded player
+  doesn't zoom the whole game out to nothing. It eases in via Phaser's
+  `Camera.zoomTo()` whenever Hook Range is purchased. That same floor is
+  why the upgrade is capped at `UPGRADE_RANGE_MAX_PURCHASES` (6, see
+  Upgrade shop) rather than repeatable forever — past 6 purchases, even
+  the maximum zoom-out can't keep the growing circle fully on screen,
+  reported as a real issue on a phone after real-world testing.
 - **Two cameras**: `this.cameras.main` follows the boat and is the only
   one that ever zooms; `this.uiCamera` is a second camera added at the
   same viewport, permanently at zoom 1 and never scrolled, dedicated to

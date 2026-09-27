@@ -267,6 +267,7 @@ const UPGRADE_SPEED_COST = 5;
 const UPGRADE_SPEED_INCREMENT = 15;
 const UPGRADE_RANGE_COST = 5;
 const UPGRADE_RANGE_INCREMENT = 25;
+const UPGRADE_RANGE_MAX_PURCHASES = 6; // beyond this, MIN_RANGE_ZOOM's floor can no longer keep the circle fully on screen
 const UPGRADE_HOOK_SPEED_COST = 5;
 const UPGRADE_HOOK_SPEED_INCREMENT = 50;
 const UPGRADE_BUTTON_W = Math.round(84 * TOUCH_UI_SCALE);
@@ -758,6 +759,7 @@ class MainScene extends Phaser.Scene {
     // these at runtime, so they can't stay plain constants.
     this.boatSpeed = BOAT_SPEED;
     this.hookRange = HOOK_RANGE;
+    this.hookRangeUpgrades = 0; // capped at UPGRADE_RANGE_MAX_PURCHASES, see the Hook Range shop entry
     this.hookSpeed = HOOK_SPEED;
 
     // Timestamp (this.time.now) until which boat controls are locked —
@@ -974,7 +976,12 @@ class MainScene extends Phaser.Scene {
     // a fixed HUD overlay now (setScrollFactor(0)), not part of the
     // scrolling world, so it stays put as the camera follows the boat.
     this.fishCount = 0;
-    const hudX = Math.round(10 * UI_SCALE), hudY = Math.round(10 * UI_SCALE), hudW = Math.round(100 * UI_SCALE), hudH = Math.round(32 * UI_SCALE);
+    // TOUCH_UI_SCALE (not plain UI_SCALE) so this floors at 0.85 on a
+    // touch device instead of shrinking all the way down with UI_SCALE —
+    // reported unreadable on a short phone screen, same fix already
+    // applied to the joystick/hook/restart buttons and remote nickname
+    // labels for the same reason.
+    const hudX = Math.round(10 * TOUCH_UI_SCALE), hudY = Math.round(10 * TOUCH_UI_SCALE), hudW = Math.round(100 * TOUCH_UI_SCALE), hudH = Math.round(32 * TOUCH_UI_SCALE);
     this.add.graphics()
       .fillStyle(0x1a1a1a, 0.55)
       .fillRoundedRect(hudX, hudY, hudW, hudH, 6)
@@ -983,7 +990,7 @@ class MainScene extends Phaser.Scene {
       .setScrollFactor(0);
     this.fishHudText = this.add.text(hudX + hudW / 2, hudY + hudH / 2, 'Fish: 0', {
       fontFamily: 'sans-serif',
-      fontSize: Math.round(15 * UI_SCALE) + 'px',
+      fontSize: Math.round(15 * TOUCH_UI_SCALE) + 'px',
       color: '#ffffff'
     }).setOrigin(0.5).setScrollFactor(0);
 
@@ -1769,8 +1776,15 @@ class MainScene extends Phaser.Scene {
         label: 'Hook Range',
         icon: 'iconRangeTexture',
         cost: UPGRADE_RANGE_COST,
-        isAvailable: () => true,
+        // Capped, unlike the other repeatable upgrades — updateRangeZoom()'s
+        // MIN_RANGE_ZOOM floor stops the camera from zooming out forever,
+        // so past a certain range the circle starts running off the edge
+        // of the screen again anyway (reported at 6 purchases on a real
+        // phone). Capping purchases here is simpler than chasing a bigger
+        // zoom-out floor that would shrink the HUD/world even further.
+        isAvailable: () => this.hookRangeUpgrades < UPGRADE_RANGE_MAX_PURCHASES,
         apply: () => {
+          this.hookRangeUpgrades++;
           this.hookRange += UPGRADE_RANGE_INCREMENT;
           this.updateRangeZoom(true); // ease the camera out so the bigger range circle stays on screen
         }

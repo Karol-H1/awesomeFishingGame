@@ -842,6 +842,37 @@
       the correct scrolled/zoomed world position. `node --check` passed
       throughout.
 
+## Done (v34)
+- [x] Capped the Hook Range upgrade at 6 purchases (new
+      `UPGRADE_RANGE_MAX_PURCHASES` constant + a `this.hookRangeUpgrades`
+      counter). Real-phone feedback after v33's HUD fix: even with the
+      camera correctly zooming out and the HUD correctly staying put, the
+      range circle itself starts running off the screen again after 6
+      purchases — `MIN_RANGE_ZOOM` (0.5) is a hard floor on how far the
+      camera will zoom out, so past a certain `hookRange` no amount of
+      zooming can keep pace with it. Capping the upgrade is simpler than
+      chasing a lower zoom floor, which would shrink the world (and HUD)
+      even further just to accommodate an extreme edge case. The button
+      dims via the existing `isAvailable()`/alpha mechanism already used
+      by Repair when at full health — no new UI code needed.
+- [x] Fixed the fish-count HUD text (and its box) being unreadably small
+      on a real phone — it used plain `UI_SCALE`, not `TOUCH_UI_SCALE`,
+      so it never got the 0.85 floor that protects every other touch HUD
+      element (joystick, hook/restart buttons, remote nickname labels)
+      from shrinking all the way down with a short screen. Same root
+      cause and same fix as v22/v23/v26's versions of this exact bug.
+- [x] Verified via direct scene inspection (`window.__debugScene`,
+      removed before commit): simulated 8 Hook Range purchases through
+      the real `tryPurchase()` path — confirmed exactly 6 succeed
+      (`hookRange` stops at 275), the button correctly dims to 0.4 alpha
+      and `isAvailable()` reads false from the 6th purchase on, and
+      further attempts are silent no-ops that don't spend fish. Confirmed
+      the font-size formula: in this environment's tiny non-touch test
+      viewport (no 0.85 floor applies) it read as small as 4px, and
+      recomputing with the touch floor applied (as it would be on the
+      user's real phone) gives 13px — matching the same fix already
+      proven out in v22/v23/v26. `node --check` passed throughout.
+
 ## Next up (pick based on what you want most)
 - [ ] Different kinds of fish, each with its own swim pattern and speed
       (e.g. faster/skittish vs. slower/lazy, or a non-circular pattern)
