@@ -198,11 +198,20 @@ the boat contained.
   instead of needing a precise click.
 
 ## Fish
-- Up to 200 fish swim in the lake at a time — up from 120 (an
+- **Shared across every connected player** — one lake-wide pool, not a
+  separate population per player. Everyone sees the same fish at the
+  same positions, and catching one removes it for everyone, not just
+  the catcher. This is the actual point of the feature: a real shared
+  resource to compete over, rather than each player quietly fishing
+  their own private copy of the lake.
+- Up to 200 fish swim in the lake at a time, **total** — up from 120 (an
   area-matched density baseline; itself up from 30, then 10, before
   the world got bigger — see Screen / world size), then bumped further
-  by request for noticeably more fish. You should never go more than
-  ~10 seconds without a fish somewhere nearby.
+  by request for noticeably more fish. That cap used to be per-player;
+  with two people playing it's now a genuine split of one shared 200,
+  not "400 total" — you should still never go more than ~10 seconds
+  without a fish somewhere nearby on your own, but that's now shared
+  ground, not a guarantee independent of what other players are doing.
 - Each fish is anchored to a fixed spawn point and continuously
   circles it, at a small **fixed** radius (independent of the lake's
   size — a fish's own swim circle doesn't get bigger just because the
@@ -227,10 +236,11 @@ the boat contained.
 - A trap disguised as a fish: while swimming, a shark is visually and
   behaviorally identical to a regular fish (same silhouette, same
   circling motion) — there's no way to tell them apart until one is
-  caught.
+  caught. Shares the same shared pool as regular fish (see Fish above).
 - Up to 5 sharks can be out at once (up from 2, same reasoning as the
-  fish cap), independent of the fish cap. A timer tries to spawn one
-  every 30 seconds if under that cap.
+  fish cap), independent of the fish cap, and — like the fish cap — a
+  global total now, not per-player. A timer tries to spawn one every
+  30 seconds if under that cap.
 - Catching one reveals it: it swaps to a much larger red shark sprite
   (rather than just turning opaque like a regular fish) and rides the
   hook back to the boat the same way.
@@ -337,10 +347,36 @@ the boat contained.
   disappears for everyone else. Restarting your own boat (R, or a
   fresh sink) cleans up and re-registers the same player ID rather than
   leaving a duplicate behind.
-- Fish and sharks are **not** synced — every player still has their
-  own independent lake population. Fish *count* is synced (see
-  Battling below), purely so opponents know how much they stand to
-  steal.
+- **Fish and sharks are a shared pool, synced with almost no ongoing
+  network traffic** — the same "compute position from `Date.now()`"
+  trick driftwood uses above, applied to something that gets created
+  and destroyed instead of just moving forever. Only two events ever
+  touch Firebase: a fish's *spawn* (its orbit center, direction,
+  starting angle, and spawn time are pushed once, when it's born) and
+  its *catch* (the record is deleted once, when a hook reaches it). Its
+  live position in between is never written or read — every client
+  independently computes the identical position from those spawn
+  parameters plus elapsed wall-clock time, exactly like driftwood.
+  Every connected player's spawn timers keep running and independently
+  check the *shared* population against the cap before adding one —
+  there's no single elected "spawner" — which converges to effectively
+  one spawner in practice, since a push echoes back to every client
+  (including whoever sent it) fast enough that the next timer tick
+  already sees the top-up'd count. A brief double-spawn right at the
+  cap boundary, or right as a new player's listener is still catching
+  up, is possible but rare, harmless, and self-correcting (nothing
+  but a catch ever removes a fish) — an accepted trade-off rather than
+  something worth a leader-election scheme. Catching is optimistic too:
+  claiming a fish just deletes its record, without a transaction, so a
+  genuinely simultaneous catch by two players could in theory let both
+  register locally — same low-stakes risk tolerance as the hit/steal
+  system below. Restarting your own boat never deletes shared fish
+  data (only your own `/players` record) — the pool is nobody's to
+  own, and a restarting or newly-joining client just re-syncs its
+  local sprites from whatever's already there, the same way it already
+  recovers every other connected player's boat on load. Fish *count*
+  (your own catches) is also synced separately (see Battling below),
+  purely so opponents know how much they stand to steal.
 - **Rocks and driftwood are synced too, but not through Firebase at
   all** (see Hazards above for what they look like). Rocks are placed
   at fixed lake *fractions* — the exact same `nx`/`ny` trick used for

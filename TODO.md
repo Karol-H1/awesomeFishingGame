@@ -873,6 +873,75 @@
       user's real phone) gives 13px — matching the same fix already
       proven out in v22/v23/v26. `node --check` passed throughout.
 
+## Done (v35)
+- [x] **Shared fish/shark pool across every connected player**, requested
+      as the next feature after the camera/HUD work settled. Previously
+      fish and sharks were fully local per-player state — two people
+      "playing together" each had their own independent 200-fish lake,
+      so there was nothing to actually compete over despite the game
+      already having boat-vs-boat battling. Now there's one shared pool:
+      everyone sees the same fish at the same positions, and catching
+      one removes it for everyone else too. `FISH_MAX`/`SHARK_MAX` are
+      now global caps, not per-player — a felt gameplay change, not just
+      a technical one, flagged for awareness.
+- [x] Reused the exact trick `updateDriftwood()` already established for
+      "every client must independently compute the same result for a
+      moving thing, with zero ongoing network cost": sync only the
+      *spawn* event (orbit center, direction, starting angle, spawn
+      time, pushed once under `/fish`) and the *catch* event (the record
+      deleted once), never the live position. Every client computes a
+      fish's current position each frame as
+      `angle0 + dir * FISH_ANGULAR_SPEED * (elapsed since spawnTime)` —
+      also replacing the old per-frame `angle += ...` accumulation,
+      which could theoretically drift between clients at different frame
+      rates even before sharing was a goal.
+- [x] `spawnFish()`/`spawnShark()` now only decide whether a new fish
+      should exist (same population-cap check as before, just now
+      checking the shared count) and push its parameters; `addFish()`
+      (new, modeled on `addRemoteBoat()`) is the single place that ever
+      creates a sprite, invoked via a `child_added` listener for every
+      client including whoever pushed it — so there's exactly one
+      spawn-a-fish code path, not a separate "mine" vs. "theirs."
+      `spawnSwimmer()` is retired.
+- [x] No leader election for spawning — every connected client's
+      existing timers keep independently checking the shared count
+      before adding one, which converges to effectively one spawner in
+      steady state (a push echoes back fast enough that the next timer
+      tick already sees the top-up'd count). A brief over-cap race at
+      the boundary, or while a newly-joined client's listener is still
+      catching up, is possible but rare, self-correcting, and accepted
+      — consistent with this project's existing tolerance for this class
+      of trade-off elsewhere (driftwood/rocks' own no-leader-election
+      design, the optimistic non-transactional catch below).
+- [x] Catching claims a fish by deleting its record, non-transactionally
+      — a genuinely simultaneous catch by two players could in theory
+      let both register locally before either's delete propagates. Rare
+      and low-stakes, same risk tolerance already accepted for the
+      hit/steal system.
+- [x] The one-time initial population burst (used to be an unconditional
+      `for` loop spawning `FISH_MAX` fish at the very start of every
+      single player's `create()`) moved into `setupFishSync()`, gated on
+      the initial Firebase snapshot actually arriving first — spawning
+      blind at t=0 like before would have made every newly-joining
+      player redundantly re-fill an already-full shared lake. A restart
+      or a new join now correctly tops up only the gap, if any (usually
+      none, since the pool persists in Firebase across sessions once
+      any player has ever filled it).
+- [x] Verified via direct scene inspection and a genuine two-tab test
+      (distinct `playerId` per tab, the established methodology):
+      confirmed exactly 200 fish spawn to Firebase on a cold-start empty
+      pool and the cap holds under repeated forced `spawnFish()` calls;
+      confirmed the elapsed-time position formula matches a live sprite
+      to sub-pixel precision; confirmed both tabs compute the *exact*
+      same position (matched bit-for-bit at a shared timestamp, not just
+      "close") for the *same* fish id rather than independent sets;
+      confirmed catching a fish in one tab made it vanish in the other
+      within about a second; confirmed restarting one tab did not clear
+      the other tab's fish or Firebase's `/fish` data, and the restarted
+      tab correctly re-synced its full local sprite set from the
+      still-existing shared pool instead of re-populating from scratch.
+      No console errors in either tab throughout. `node --check` passed.
+
 ## Next up (pick based on what you want most)
 - [ ] Different kinds of fish, each with its own swim pattern and speed
       (e.g. faster/skittish vs. slower/lazy, or a non-circular pattern)
@@ -899,8 +968,6 @@
       differing lake sizes, not genuine touch)
 - [ ] Playtest v16 (spacebar) and v17 (mobile controls) on a real
       touch device — neither has had a genuine touch-input playtest yet
-- [ ] Sync fish/sharks so all players share one pool instead of each
-      having an independent copy
 - [ ] Smooth/interpolate remote boat movement between network updates
       instead of snapping to the latest position
 - [ ] Lock down the Firebase Realtime Database security rules (it's

@@ -303,7 +303,7 @@ const FISH_CIRCLE_RADIUS = 30; // fixed world-space px, NOT derived from LAKE_W 
 // `LAKE_W / 32` grew ~3.5x along with the bigger world and made circles look far too large.
 const FISH_ANGULAR_SPEED = Math.PI / 3; // radians/sec around their own circle — full loop in 6s, slowed from 4s
 const FISH_CATCH_RADIUS = 16; // hook-to-fish distance that counts as a catch
-const FISH_TEX_W = 20; // baked texture size, left unscaled — see spawnSwimmer()'s setScale(WORLD_OBJECT_SCALE)
+const FISH_TEX_W = 20; // baked texture size, left unscaled — see addFish()'s setScale(WORLD_OBJECT_SCALE)
 const FISH_TEX_H = 10;
 const FISH_SUBMERGED_TINT = 0x27425c;
 const FISH_SUBMERGED_ALPHA = 0.55; // dark, translucent — reads as a shadow under the surface
@@ -320,7 +320,7 @@ const SHARK_SPAWN_INTERVAL_MS = 30000;
 const SHARK_DAMAGE_PERCENT = 20;
 const SHARK_STUN_MS = 1000;
 const SHARK_STUN_TINT = 0xff6666;
-const SHARK_TEX_W = 48; // baked texture size, left unscaled — see spawnSwimmer()'s setScale(WORLD_OBJECT_SCALE)
+const SHARK_TEX_W = 48; // baked texture size, left unscaled — see addFish()'s setScale(WORLD_OBJECT_SCALE)
 const SHARK_TEX_H = 24;
 const SHARK_ATTACK_TEXT_OFFSET_Y = -28; // above the boat, mirroring the health bar below it
 
@@ -328,8 +328,10 @@ const SHARK_ATTACK_TEXT_OFFSET_Y = -28; // above the boat, mirroring the health 
 // to run ourselves: every client just reads/writes the same free-tier
 // hosted database. Each player writes their own boat's state under
 // /players/{id} and renders everyone else's from the same path. Fish
-// and sharks stay local per-player; boats can now hook and steal from
-// each other too (see Battling below).
+// and sharks are a shared pool under /fish (see setupFishSync()) —
+// everyone sees the same fish at the same positions, and catching one
+// removes it for everyone. Boats can also hook and steal from each
+// other too (see Battling below).
 const firebaseConfig = {
   apiKey: "AIzaSyD_NbpwH8rek02FSCGB4oo_j9-s8yO49w8",
   authDomain: "awesome-fishing-game.firebaseapp.com",
@@ -952,11 +954,16 @@ class MainScene extends Phaser.Scene {
 
     // Fish — each swims a fixed circle around its own spawn point,
     // drawn as a dark translucent silhouette to read as "under the
-    // water". Capped at FISH_MAX concurrently; a repeating timer tops
-    // the pool back up as fish get caught and delivered.
+    // water". Shared across every connected player (see setupFishSync()
+    // below) and capped at FISH_MAX globally; a repeating timer tops the
+    // pool back up as fish get caught. The one-time initial fill (used
+    // to happen right here, synchronously) now happens inside
+    // setupFishSync() instead, once we actually know how many fish are
+    // already shared — spawning FISH_MAX of them unconditionally here,
+    // before any Firebase data has arrived, would make every newly
+    // joining player redundantly re-fill an already-full lake.
     this.fish = [];
     this.hookedFish = null;
-    for (let i = 0; i < FISH_MAX; i++) this.spawnFish();
     this.time.addEvent({
       delay: FISH_SPAWN_INTERVAL_MS,
       loop: true,
@@ -1050,7 +1057,7 @@ class MainScene extends Phaser.Scene {
     // marker in this file) belongs only to uiCamera; everything else
     // (boat, background, obstacles, fish, the local hook/health bar/range
     // circle) belongs only to the world-following main camera. Objects
-    // created later at runtime (fish/sharks via spawnSwimmer(), remote
+    // created later at runtime (fish/sharks via addFish(), remote
     // players via addRemoteBoat()) aren't covered by this one-time split —
     // each of those calls its own uiCamera.ignore() right after creating
     // its objects instead.
@@ -1060,6 +1067,7 @@ class MainScene extends Phaser.Scene {
     this.uiCamera.ignore(worldObjects);
 
     this.setupMultiplayer();
+    this.setupFishSync();
   }
 
   // Positions are synced as a fraction of the lake (0..1 on each axis)
@@ -1129,6 +1137,78 @@ class MainScene extends Phaser.Scene {
       this.playerRef.onDisconnect().cancel();
       this.playerRef.remove();
     });
+  }
+
+  // Fish/sharks are a shared pool under /fish, not owned by any one
+  // player — unlike a boat, a fish record is never removed on
+  // disconnect, and this player's own restart must not wipe it out for
+  // everyone else (see the SHUTDOWN handler below: .off() only, no
+  // .remove()). Only the spawn event and the catch (removal) are synced;
+  // a fish's live position is computed independently by every client
+  // from elapsed wall-clock time, the same zero-ongoing-traffic trick
+  // updateDriftwood() already uses.
+  setupFishSync() {
+    this.fishSprites = {}; // fish id -> sprite, mirrors this.remoteBoats
+
+    this.fishRef = db.ref('fish');
+    this.fishRef.on('child_added', (snap) => this.addFish(snap.key, snap.val()));
+    this.fishRef.on('child_removed', (snap) => this.removeFish(snap.key));
+
+    // One-time top-up to the starting population. child_added above
+    // fires for every already-existing fish before this 'value' snapshot
+    // resolves, so by the time this callback runs, this.fish already
+    // reflects the true shared count — spawnFish() already no-ops once
+    // FISH_MAX is reached, so this correctly does nothing on a lake a
+    // previous player already filled, and fully seeds a brand new one.
+    // Sharks intentionally get no equivalent burst here — they've always
+    // trickled in from the repeating timer alone (see create()).
+    this.fishRef.once('value', () => {
+      for (let i = 0; i < FISH_MAX; i++) this.spawnFish();
+    });
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.fishRef.off());
+  }
+
+  // Sourced from a synced /fish record rather than freshly randomized —
+  // the actual sprite-creation twin of spawnFish()/spawnShark() below,
+  // which only decide *whether* a new fish should exist and, if so, push
+  // its parameters; this is the single place that ever creates a fish
+  // sprite, called for everyone (including whoever pushed it) via the
+  // child_added listener above.
+  addFish(id, data) {
+    if (this.fishSprites[id]) return;
+    const swimmer = this.add.image(data.cx, data.cy, 'fishTexture');
+    swimmer.setScale(WORLD_OBJECT_SCALE);
+    swimmer.fishId = id;
+    swimmer.orbitCenterX = data.cx;
+    swimmer.orbitCenterY = data.cy;
+    swimmer.orbitAngle0 = data.angle0;
+    swimmer.orbitDir = data.dir;
+    swimmer.spawnTime = data.spawnTime;
+    swimmer.isShark = data.isShark;
+    swimmer.fishState = 'swimming';
+    swimmer.setTint(FISH_SUBMERGED_TINT);
+    swimmer.setAlpha(FISH_SUBMERGED_ALPHA);
+    swimmer.setDepth(DEPTH_FISH);
+    this.uiCamera.ignore(swimmer);
+
+    this.fishSprites[id] = swimmer;
+    this.fish.push(swimmer);
+  }
+
+  removeFish(id) {
+    const swimmer = this.fishSprites[id];
+    if (!swimmer) return;
+    delete this.fishSprites[id];
+    // If we're the one who caught it, it's already riding our hook home
+    // (this.hookedFish) — this fires almost immediately after our own
+    // catchFish() removes it from Firebase, well before the hook actually
+    // arrives back at the boat. Let deliverFish()/deliverShark() destroy
+    // it on arrival, same as always; just stop tracking it here so it
+    // isn't double-managed.
+    if (swimmer === this.hookedFish) return;
+    swimmer.destroy();
+    this.fish = this.fish.filter(f => f !== swimmer);
   }
 
   handleIncomingHit(snap) {
@@ -1368,7 +1448,7 @@ class MainScene extends Phaser.Scene {
 
     this.drawHealthBar();
     this.drawHookRange();
-    this.updateFish(delta);
+    this.updateFish();
     this.updateHook(delta);
     this.updateDriftwood();
     this.drawMinimap();
@@ -1564,11 +1644,17 @@ class MainScene extends Phaser.Scene {
     this.joystickStick.fillCircle(this.joystickCenter.x + offsetX, this.joystickCenter.y + offsetY, JOYSTICK_STICK_RADIUS);
   }
 
-  updateFish(delta) {
-    const dt = delta / 1000;
+  updateFish() {
+    // Angle is computed fresh from elapsed wall-clock time since spawn,
+    // not accumulated frame-by-frame — the same trick updateDriftwood()
+    // uses, and required now that fish are shared: every client must
+    // independently compute the exact same position for the exact same
+    // fish at a given instant, with no ongoing position sync.
+    const now = Date.now();
     for (const fish of this.fish) {
       if (fish.fishState !== 'swimming') continue; // caught fish ride the hook instead, see updateHook()
-      fish.orbitAngle += fish.orbitDir * FISH_ANGULAR_SPEED * dt;
+      const elapsed = (now - fish.spawnTime) / 1000;
+      fish.orbitAngle = fish.orbitAngle0 + fish.orbitDir * FISH_ANGULAR_SPEED * elapsed;
       fish.x = fish.orbitCenterX + Math.cos(fish.orbitAngle) * FISH_CIRCLE_RADIUS;
       fish.y = fish.orbitCenterY + Math.sin(fish.orbitAngle) * FISH_CIRCLE_RADIUS;
       // Tangent direction of travel around the circle, so the fish
@@ -1677,6 +1763,15 @@ class MainScene extends Phaser.Scene {
     }
     this.hookedFish = fish;
     this.hookState = 'returning';
+
+    // Claim it — removes it from the shared pool for every player, not
+    // just locally. Optimistic/non-transactional, same risk tolerance as
+    // the hit/steal system elsewhere in this file: a genuinely
+    // simultaneous catch by two players (both hooks in FISH_CATCH_RADIUS
+    // of the same fish on the same frame) could in theory let both
+    // register locally before either remove() propagates. Rare and
+    // low-stakes, not worth a transactional write.
+    db.ref('fish/' + fish.fishId).remove();
   }
 
   hitOpponent(id, remote) {
@@ -1713,43 +1808,36 @@ class MainScene extends Phaser.Scene {
     this.applyDamage(SHARK_DAMAGE_PERCENT);
   }
 
+  // Both of these only decide *whether* a new fish should exist, then
+  // push its (randomized) spawn parameters to the shared /fish pool —
+  // they no longer create a sprite directly. The actual sprite is
+  // created uniformly for every connected client, including whoever
+  // pushed it, by addFish() via the child_added listener in
+  // setupFishSync(). Fish and sharks share this same pool/array
+  // (distinguished by isShark) and orbit identically while swimming —
+  // only the shop-visible label and catch outcome differ.
   spawnFish() {
     const fishCount = this.fish.filter((f) => !f.isShark).length;
     if (fishCount >= FISH_MAX) return;
-    const fish = this.spawnSwimmer();
-    fish.isShark = false;
+    this.pushSwimmer(false);
   }
 
   spawnShark() {
     const sharkCount = this.fish.filter((f) => f.isShark).length;
     if (sharkCount >= SHARK_MAX) return;
-    const shark = this.spawnSwimmer();
-    shark.isShark = true;
+    this.pushSwimmer(true);
   }
 
-  // Shared setup for both fish and sharks — while swimming they're
-  // visually and behaviorally identical (same texture, same circling
-  // motion); only the isShark flag set by the caller distinguishes
-  // them, read later when the hook catches one.
-  spawnSwimmer() {
+  pushSwimmer(isShark) {
     const margin = FISH_CIRCLE_RADIUS + FISH_TEX_W / 2 + 4;
-    const centerX = Phaser.Math.Between(WATER_LEFT + margin, WATER_RIGHT - margin);
-    const centerY = Phaser.Math.Between(WATER_TOP + margin, WATER_BOTTOM - margin);
-
-    const swimmer = this.add.image(centerX + FISH_CIRCLE_RADIUS, centerY, 'fishTexture');
-    swimmer.setScale(WORLD_OBJECT_SCALE); // baked texture (fish or, once caught, shark) stays full-res
-    swimmer.orbitCenterX = centerX;
-    swimmer.orbitCenterY = centerY;
-    swimmer.orbitAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    swimmer.orbitDir = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
-    swimmer.fishState = 'swimming';
-    swimmer.setTint(FISH_SUBMERGED_TINT);
-    swimmer.setAlpha(FISH_SUBMERGED_ALPHA);
-    swimmer.setDepth(DEPTH_FISH);
-    this.uiCamera.ignore(swimmer); // world object spawned after create()'s one-time HUD/world camera split
-
-    this.fish.push(swimmer);
-    return swimmer;
+    this.fishRef.push({
+      cx: Phaser.Math.Between(WATER_LEFT + margin, WATER_RIGHT - margin),
+      cy: Phaser.Math.Between(WATER_TOP + margin, WATER_BOTTOM - margin),
+      angle0: Phaser.Math.FloatBetween(0, Math.PI * 2),
+      dir: Phaser.Math.Between(0, 1) === 0 ? 1 : -1,
+      spawnTime: Date.now(),
+      isShark
+    });
   }
 
   createUpgradeButtons() {

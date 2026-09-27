@@ -147,6 +147,40 @@ bundler (e.g. Vite) to serve them.
   every hazard type via a single `this.boat.lastHitTime` timestamp, so
   bouncing from a rock straight into driftwood can't double-dip.
 
+## Fish/shark sync
+Fish and sharks are a shared pool under Firebase's `/fish` path (see
+`setupFishSync()`), following the exact same principle as driftwood
+above — sync the minimum needed to let every client compute an
+identical result independently, not the result itself:
+- `spawnFish()`/`spawnShark()` only decide *whether* a new one should
+  exist (checking the population cap against `this.fish`, unchanged
+  from before this existed) and, if so, push its spawn parameters —
+  orbit center, direction, starting angle, spawn time — via
+  `this.fishRef.push(...)`. They no longer create a sprite directly.
+- `addFish()`, called from a `child_added` listener, is the single
+  place that ever creates a fish sprite — for every client, including
+  whoever pushed it. This guarantees one code path, so there's no
+  separate "my own fish" vs. "everyone else's fish" logic to keep in
+  sync with itself.
+- `updateFish()` computes each swimming fish's position every frame as
+  `orbitAngle0 + dir * FISH_ANGULAR_SPEED * (elapsed since spawnTime)`,
+  the same wall-clock-deterministic formula `updateDriftwood()` already
+  used — not an accumulated `angle += ...` step, which would let two
+  clients' fish drift apart under different frame rates.
+- `catchFish()` claims a fish by deleting its `/fish/{id}` record.
+  `removeFish()` (the `child_removed` handler) has to special-case one
+  thing: when *you* catch a fish, this fires for your own delete almost
+  immediately, well before the hook actually finishes travelling home
+  with it — so it checks `swimmer === this.hookedFish` and, if so,
+  leaves the sprite alone (just stops tracking its id), letting the
+  existing `deliverFish()`/`deliverShark()` destroy it on arrival like
+  always. For every other client, the fish just vanishes immediately.
+- Cleanup on scene shutdown (`this.fishRef.off()`) mirrors
+  `setupMultiplayer()`'s existing pattern, but deliberately does **not**
+  also delete the `/fish` data the way a player's own `/players` record
+  is removed — fish aren't owned by any one player, so one player
+  restarting must never wipe the shared lake for everyone else.
+
 ## Lake background layering
 Two pieces, both sized to the world (`WORLD_WIDTH`/`WORLD_HEIGHT`), not
 the browser window:
